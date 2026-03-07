@@ -596,7 +596,10 @@ def get_damaged_in_range(start_date, end_date):
     return [dict(r) for r in rows]
 
 
-def generate_receipt_html(receipt_no, items, subtotal, amount_paid, change_given, customer_name=''):
+def generate_receipt_html(receipt_no, items, subtotal, amount_paid, change_given,
+                          customer_name='', auto_print=False):
+    """Generate a thermal-printer-ready receipt (optimised for 80mm roll paper).
+    Set auto_print=True to fire the print dialog automatically on load."""
     shop_name = get_setting('shop_name', "De-Nod's Wholesale Drinks")
     shop_address = get_setting('shop_address', 'Ghana')
     shop_phone = get_setting('shop_phone', '')
@@ -604,17 +607,26 @@ def generate_receipt_html(receipt_no, items, subtotal, amount_paid, change_given
     currency = get_setting('currency', 'GHS')
     now = datetime.now()
 
+    # Build item rows — wrap long names so they fit 80mm paper
     lines = ""
     for item in items:
+        # Truncate name+size to avoid overflow on narrow paper
+        label = f"{item['name']}"
+        size_label = f"  ({item['size']})"
         lines += f"""
-        <tr>
-          <td>{item['name']} ({item['size']})</td>
-          <td style="text-align:center">{item['qty']}</td>
-          <td style="text-align:right">{currency} {item['unit_price']:.2f}</td>
-          <td style="text-align:right">{currency} {item['total']:.2f}</td>
+        <tr class="item-row">
+          <td class="item-name">{label}<br><span class="item-size">{size_label}</span></td>
+          <td class="item-qty">{item['qty']}</td>
+          <td class="item-price">{item['unit_price']:.2f}</td>
+          <td class="item-total">{item['total']:.2f}</td>
         </tr>"""
 
-    phone_line = f"<p>📞 {shop_phone}</p>" if shop_phone else ""
+    phone_line = f"<div>{shop_phone}</div>" if shop_phone else ""
+    customer_line = f"<div class='meta-row'><span>Customer:</span><span>{customer_name}</span></div>" if customer_name else ""
+    auto_print_js = "window.onload = function(){ setTimeout(function(){ window.print(); }, 400); };" if auto_print else ""
+
+    # Dashed separator helper
+    sep = "-" * 42
 
     html = f"""<!DOCTYPE html>
 <html>
@@ -622,61 +634,155 @@ def generate_receipt_html(receipt_no, items, subtotal, amount_paid, change_given
 <meta charset="UTF-8">
 <title>Receipt {receipt_no}</title>
 <style>
-  @media print {{ @page {{ margin: 8mm; }} .no-print {{ display:none; }} }}
-  body {{ font-family: 'Courier New', Courier, monospace; font-size: 13px; color: #111; margin: 0; padding: 20px; }}
-  .header {{ text-align:center; border-bottom: 2px dashed #333; padding-bottom: 12px; margin-bottom: 12px; }}
-  .header h1 {{ font-size: 1.6rem; margin: 0 0 4px 0; letter-spacing: 1px; }}
-  .header p {{ margin: 2px 0; font-size: 12px; color: #444; }}
-  .receipt-meta {{ display: flex; justify-content: space-between; font-size:12px; margin-bottom:12px; color:#555; }}
-  table {{ width:100%; border-collapse:collapse; }}
-  th {{ background:#111; color:white; padding: 6px 4px; font-size:12px; text-align:left; }}
-  td {{ padding: 5px 4px; font-size: 12px; border-bottom: 1px dotted #ccc; vertical-align:top; }}
-  .totals {{ margin-top:10px; border-top: 2px dashed #333; padding-top:10px; }}
-  .totals-row {{ display:flex; justify-content:space-between; padding:3px 0; font-size:13px; }}
-  .totals-row.grand {{ font-size:1.2rem; font-weight:bold; border-top:1px solid #111; padding-top:6px; margin-top:4px; }}
-  .totals-row.change {{ font-size:1.1rem; color: #1a7a3a; font-weight:bold; }}
-  .footer {{ text-align:center; border-top:2px dashed #333; margin-top:12px; padding-top:12px; font-size:12px; color:#555; }}
-  .print-btn {{ display:block; width:100%; margin-top:16px; padding:12px; font-size:1rem; background:#1a2035; color:white; border:none; border-radius:8px; cursor:pointer; font-family:sans-serif; font-weight:bold; }}
+  /* ── Thermal printer page setup ── */
+  @page {{
+    size: 80mm auto;   /* 80mm roll width, auto height */
+    margin: 2mm 1mm;
+  }}
+
+  /* ── Screen preview matches paper width ── */
+  * {{ box-sizing: border-box; margin: 0; padding: 0; }}
+
+  body {{
+    font-family: 'Courier New', Courier, monospace;
+    font-size: 11px;
+    color: #000;
+    background: #fff;
+    width: 76mm;
+    margin: 0 auto;
+    padding: 2mm 1mm;
+  }}
+
+  /* ── Header ── */
+  .hdr {{ text-align: center; margin-bottom: 3mm; }}
+  .hdr .shop-name {{
+    font-size: 15px;
+    font-weight: bold;
+    letter-spacing: 0.5px;
+    text-transform: uppercase;
+    margin-bottom: 1mm;
+  }}
+  .hdr .shop-sub {{ font-size: 10px; color: #333; line-height: 1.5; }}
+
+  .sep {{ color: #000; font-size: 10px; letter-spacing: 0; word-break: break-all; margin: 2mm 0; }}
+
+  /* ── Receipt meta ── */
+  .meta-row {{ display: flex; justify-content: space-between; font-size: 10px; margin: 0.8mm 0; }}
+  .meta-row span:last-child {{ text-align: right; }}
+
+  /* ── Items table ── */
+  table {{ width: 100%; border-collapse: collapse; margin: 2mm 0; }}
+  thead th {{
+    font-size: 10px;
+    font-weight: bold;
+    border-top: 1px solid #000;
+    border-bottom: 1px solid #000;
+    padding: 1mm 0.5mm;
+    text-align: left;
+  }}
+  th.item-qty, th.item-price, th.item-total {{ text-align: right; }}
+
+  td {{ padding: 1mm 0.5mm; vertical-align: top; font-size: 10px; border-bottom: 1px dotted #aaa; }}
+  .item-name {{ width: 44%; font-weight: bold; font-size: 10px; line-height: 1.35; }}
+  .item-size {{ font-weight: normal; font-size: 9px; color: #444; }}
+  .item-qty  {{ width: 8%;  text-align: right; }}
+  .item-price{{ width: 22%; text-align: right; }}
+  .item-total{{ width: 26%; text-align: right; font-weight: bold; }}
+
+  /* ── Totals ── */
+  .totals {{ margin: 2mm 0 1mm 0; }}
+  .total-row {{ display: flex; justify-content: space-between; font-size: 11px; padding: 0.8mm 0; }}
+  .total-row.grand {{
+    font-size: 14px;
+    font-weight: bold;
+    border-top: 2px solid #000;
+    border-bottom: 2px solid #000;
+    padding: 1.5mm 0;
+    margin: 1mm 0;
+  }}
+  .total-row.change-row {{ font-size: 12px; font-weight: bold; }}
+
+  /* ── Footer ── */
+  .ftr {{ text-align: center; font-size: 10px; color: #333; margin-top: 3mm; line-height: 1.6; }}
+
+  /* ── Screen-only print button (hidden when printing) ── */
+  .print-btn {{
+    display: block;
+    width: 100%;
+    margin-top: 5mm;
+    padding: 3mm;
+    font-size: 13px;
+    font-weight: bold;
+    background: #1a2035;
+    color: white;
+    border: none;
+    border-radius: 2mm;
+    cursor: pointer;
+    letter-spacing: 0.5px;
+  }}
+  .print-btn:hover {{ background: #FF6B2B; }}
+
+  @media print {{
+    .print-btn {{ display: none !important; }}
+    body {{ width: 76mm; margin: 0; padding: 1mm; }}
+  }}
 </style>
+<script>{auto_print_js}</script>
 </head>
 <body>
-  <div class="header">
-    <h1>🍺 {shop_name}</h1>
-    <p>{shop_address}</p>
-    {phone_line}
+
+  <div class="hdr">
+    <div class="shop-name">{shop_name}</div>
+    <div class="shop-sub">
+      <div>{shop_address}</div>
+      {phone_line}
+    </div>
   </div>
-  <div class="receipt-meta">
-    <div><strong>Receipt:</strong> {receipt_no}</div>
-    <div>{now.strftime("%d %b %Y  %H:%M")}</div>
-  </div>
-  {"<p style='font-size:12px;'><strong>Customer:</strong> " + customer_name + "</p>" if customer_name else ""}
+
+  <div class="sep">{sep}</div>
+
+  <div class="meta-row"><span>Receipt #</span><span>{receipt_no}</span></div>
+  <div class="meta-row"><span>Date</span><span>{now.strftime("%d/%m/%Y  %H:%M")}</span></div>
+  {customer_line}
+
+  <div class="sep">{sep}</div>
+
   <table>
     <thead>
       <tr>
-        <th>Item</th>
-        <th style="text-align:center">Qty</th>
-        <th style="text-align:right">Unit</th>
-        <th style="text-align:right">Total</th>
+        <th class="item-name">ITEM</th>
+        <th class="item-qty">QTY</th>
+        <th class="item-price">PRICE</th>
+        <th class="item-total">TOTAL</th>
       </tr>
     </thead>
     <tbody>{lines}</tbody>
   </table>
+
   <div class="totals">
-    <div class="totals-row grand">
-      <span>TOTAL</span><span>{currency} {subtotal:.2f}</span>
+    <div class="total-row grand">
+      <span>TOTAL</span>
+      <span>{currency} {subtotal:.2f}</span>
     </div>
-    <div class="totals-row">
-      <span>Amount Paid</span><span>{currency} {amount_paid:.2f}</span>
+    <div class="total-row">
+      <span>Amount Paid</span>
+      <span>{currency} {amount_paid:.2f}</span>
     </div>
-    <div class="totals-row change">
-      <span>Change</span><span>{currency} {change_given:.2f}</span>
+    <div class="total-row change-row">
+      <span>Change</span>
+      <span>{currency} {change_given:.2f}</span>
     </div>
   </div>
-  <div class="footer">
-    <p>{footer}</p>
-    <p>Printed: {now.strftime("%d/%m/%Y %H:%M:%S")}</p>
+
+  <div class="sep">{sep}</div>
+
+  <div class="ftr">
+    <div>{footer}</div>
+    <div style="margin-top:1mm;font-size:9px;">Printed: {now.strftime("%d/%m/%Y %H:%M:%S")}</div>
   </div>
-  <button class="print-btn no-print" onclick="window.print()">🖨️ PRINT THIS RECEIPT</button>
+
+  <button class="print-btn" onclick="window.print()">🖨️  PRINT RECEIPT</button>
+
 </body>
 </html>"""
     return html
@@ -684,11 +790,13 @@ def generate_receipt_html(receipt_no, items, subtotal, amount_paid, change_given
 
 # ── Cart Session State ─────────────────────────────────────────────────────────
 if 'cart' not in st.session_state:
-    st.session_state.cart = []  # list of {product_id, name, size, unit_price, qty, total}
+    st.session_state.cart = []
 if 'last_receipt' not in st.session_state:
     st.session_state.last_receipt = None
 if 'search_results' not in st.session_state:
     st.session_state.search_results = []
+if 'print_now' not in st.session_state:
+    st.session_state.print_now = False
 
 
 # ── Init DB ────────────────────────────────────────────────────────────────────
@@ -828,23 +936,46 @@ with tab_sale:
                         subtotal, amount_paid, max(0, change), customer_name
                     )
                     st.session_state.cart = []
-                    st.success(f"✅ Sale complete! Receipt #{receipt_no}")
-                    st.balloons()
+                    st.session_state.print_now = True   # ← triggers auto-print
                     st.rerun()
 
             if col_b.button("🗑️ Clear Cart", use_container_width=True):
                 st.session_state.cart = []
                 st.rerun()
 
-            # Show receipt after sale
-            if st.session_state.last_receipt:
-                rno, items, stotal, paid, chg, cust = st.session_state.last_receipt
-                with st.expander("🧾 Print Last Receipt", expanded=True):
-                    html = generate_receipt_html(rno, items, stotal, paid, chg, cust)
-                    st.components.v1.html(html, height=600, scrolling=True)
-                    st.download_button("💾 Save Receipt as HTML", html,
-                                       file_name=f"receipt_{rno}.html", mime="text/html",
-                                       use_container_width=True)
+        # ── Receipt panel — shown whenever a last receipt exists ──────────────
+        if st.session_state.last_receipt:
+            rno, items, stotal, paid, chg, cust = st.session_state.last_receipt
+
+            st.markdown("---")
+            st.markdown('<div class="section-title">🧾 Last Receipt</div>', unsafe_allow_html=True)
+
+            # Big prominent print button at the top
+            p1, p2 = st.columns([3, 1])
+            p1.markdown(f"**Receipt:** `{rno}`")
+
+            if p2.button("🖨️  PRINT", use_container_width=True, type="primary", key="top_print_btn"):
+                st.session_state.print_now = True
+                st.rerun()
+
+            # Render receipt — auto_print fires once after sale, then turns off
+            auto = st.session_state.print_now
+            receipt_html = generate_receipt_html(rno, items, stotal, paid, chg, cust, auto_print=auto)
+
+            if auto:
+                st.session_state.print_now = False   # reset so it doesn't loop
+
+            # Show the receipt preview inside Streamlit
+            st.components.v1.html(receipt_html, height=620, scrolling=True)
+
+            # Save a copy to disk so it can also be downloaded
+            st.download_button(
+                "💾  Save Receipt (HTML)",
+                data=receipt_html,
+                file_name=f"receipt_{rno}.html",
+                mime="text/html",
+                use_container_width=True,
+            )
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
