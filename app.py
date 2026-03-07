@@ -229,8 +229,8 @@ def init_db():
     existing_users = c.execute("SELECT COUNT(*) FROM users").fetchone()[0]
     if existing_users == 0:
         c.executemany("INSERT INTO users (name, pin) VALUES (?,?)", [
-            ("Owner (Dad)", "1234"),
-            ("Staff",       "5678"),
+            ("Stephen Acquah", "1234"),
+            ("Staff",          "5678"),
         ])
 
     conn.commit()
