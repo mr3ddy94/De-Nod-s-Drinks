@@ -243,238 +243,238 @@ def set_setting(key, value):
 
 def _seed_products(c):
     products = [
-        # (name, category, size, buy_price, sell_price, stock_qty, low_stock_alert)
+        # (name, category, size, buy_price_unused, wholesale_price, stock_qty, low_stock_alert)
 
         # ── BEERS ─────────────────────────────────────────────────────────────
-        ("Club Beer", "Beer", "330ml Bottle", 7, 10, 120, 24),
-        ("Club Beer", "Beer", "500ml Bottle", 10, 14, 96, 24),
-        ("Star Beer", "Beer", "330ml Bottle", 7, 10, 120, 24),
-        ("Star Beer", "Beer", "500ml Bottle", 10, 14, 96, 24),
-        ("Guinness Foreign Extra Stout", "Beer", "330ml Bottle", 8, 12, 96, 24),
-        ("Guinness Foreign Extra Stout", "Beer", "500ml Can", 11, 16, 96, 24),
-        ("Stone Strong Lager", "Beer", "330ml Bottle", 6, 9, 120, 24),
-        ("Eagle Lager", "Beer", "330ml Bottle", 5, 8, 120, 24),
-        ("Heineken", "Beer", "330ml Bottle", 13, 18, 72, 12),
-        ("Corona Extra", "Beer", "330ml Bottle", 16, 22, 48, 12),
-        ("Stella Artois", "Beer", "330ml Bottle", 14, 20, 48, 12),
-        ("Budweiser", "Beer", "330ml Can", 14, 20, 48, 12),
-        ("Trophy Lager", "Beer", "600ml Bottle", 10, 14, 96, 24),
-        ("Club Shandy", "Beer", "330ml Can", 7, 11, 96, 24),
-        ("Orijin Beer", "Beer", "330ml Can", 10, 15, 72, 24),
-        ("Legend Extra Stout", "Beer", "600ml Bottle", 10, 14, 72, 24),
+        ("Club Beer", "Beer", "330ml Bottle", 0, 10, 120, 24),
+        ("Club Beer", "Beer", "500ml Bottle", 0, 14, 96, 24),
+        ("Star Beer", "Beer", "330ml Bottle", 0, 10, 120, 24),
+        ("Star Beer", "Beer", "500ml Bottle", 0, 14, 96, 24),
+        ("Guinness Foreign Extra Stout", "Beer", "330ml Bottle", 0, 12, 96, 24),
+        ("Guinness Foreign Extra Stout", "Beer", "500ml Can", 0, 16, 96, 24),
+        ("Stone Strong Lager", "Beer", "330ml Bottle", 0, 9, 120, 24),
+        ("Eagle Lager", "Beer", "330ml Bottle", 0, 8, 120, 24),
+        ("Heineken", "Beer", "330ml Bottle", 0, 18, 72, 12),
+        ("Corona Extra", "Beer", "330ml Bottle", 0, 22, 48, 12),
+        ("Stella Artois", "Beer", "330ml Bottle", 0, 20, 48, 12),
+        ("Budweiser", "Beer", "330ml Can", 0, 20, 48, 12),
+        ("Trophy Lager", "Beer", "600ml Bottle", 0, 14, 96, 24),
+        ("Club Shandy", "Beer", "330ml Can", 0, 11, 96, 24),
+        ("Orijin Beer", "Beer", "330ml Can", 0, 15, 72, 24),
+        ("Legend Extra Stout", "Beer", "600ml Bottle", 0, 14, 72, 24),
 
         # ── MALTA GUINNESS RANGE ──────────────────────────────────────────────
-        ("Malta Guinness", "Malt Drink", "330ml Bottle", 5, 8, 144, 24),
-        ("Malta Guinness", "Malt Drink", "330ml Can", 5, 8, 144, 24),
-        ("Malta Guinness", "Malt Drink", "500ml Bottle", 8, 12, 96, 24),
-        ("Malta Guinness Cocoa", "Malt Drink", "330ml Can", 6, 9, 96, 24),
-        ("Malta Guinness Extra", "Malt Drink", "330ml Bottle", 6, 9, 96, 24),
+        ("Malta Guinness", "Malt Drink", "330ml Bottle", 0, 8, 144, 24),
+        ("Malta Guinness", "Malt Drink", "330ml Can", 0, 8, 144, 24),
+        ("Malta Guinness", "Malt Drink", "500ml Bottle", 0, 12, 96, 24),
+        ("Malta Guinness Cocoa", "Malt Drink", "330ml Can", 0, 9, 96, 24),
+        ("Malta Guinness Extra", "Malt Drink", "330ml Bottle", 0, 9, 96, 24),
 
         # ── OTHER MALT DRINKS ─────────────────────────────────────────────────
-        ("Beta Malt", "Malt Drink", "330ml Can", 4, 7, 144, 24),
-        ("Alvaro Pear", "Malt Drink", "330ml Bottle", 6, 9, 96, 24),
-        ("Alvaro Apple", "Malt Drink", "330ml Bottle", 6, 9, 96, 24),
-        ("Schweppes Malt", "Malt Drink", "330ml Can", 5, 8, 96, 24),
-        ("Hollandia Malt", "Malt Drink", "330ml Can", 5, 8, 96, 24),
+        ("Beta Malt", "Malt Drink", "330ml Can", 0, 7, 144, 24),
+        ("Alvaro Pear", "Malt Drink", "330ml Bottle", 0, 9, 96, 24),
+        ("Alvaro Apple", "Malt Drink", "330ml Bottle", 0, 9, 96, 24),
+        ("Schweppes Malt", "Malt Drink", "330ml Can", 0, 8, 96, 24),
+        ("Hollandia Malt", "Malt Drink", "330ml Can", 0, 8, 96, 24),
 
         # ── COCA-COLA RANGE ───────────────────────────────────────────────────
-        ("Coca-Cola", "Soft Drink", "200ml Bottle", 2, 4, 240, 48),
-        ("Coca-Cola", "Soft Drink", "300ml Bottle", 3, 5, 240, 48),
-        ("Coca-Cola", "Soft Drink", "500ml Bottle", 5, 8, 144, 48),
-        ("Coca-Cola", "Soft Drink", "1L Bottle", 9, 14, 96, 24),
-        ("Coca-Cola", "Soft Drink", "1.5L Bottle", 12, 18, 72, 24),
-        ("Coca-Cola", "Soft Drink", "2L Bottle", 15, 22, 48, 12),
-        ("Coca-Cola", "Soft Drink", "330ml Can", 5, 8, 144, 48),
-        ("Coca-Cola Zero Sugar", "Soft Drink", "330ml Can", 5, 8, 96, 24),
-        ("Coca-Cola Zero Sugar", "Soft Drink", "500ml Bottle", 6, 9, 72, 24),
-        ("Diet Coke", "Soft Drink", "330ml Can", 5, 8, 60, 24),
+        ("Coca-Cola", "Soft Drink", "200ml Bottle", 0, 4, 240, 48),
+        ("Coca-Cola", "Soft Drink", "300ml Bottle", 0, 5, 240, 48),
+        ("Coca-Cola", "Soft Drink", "500ml Bottle", 0, 8, 144, 48),
+        ("Coca-Cola", "Soft Drink", "1L Bottle", 0, 14, 96, 24),
+        ("Coca-Cola", "Soft Drink", "1.5L Bottle", 0, 18, 72, 24),
+        ("Coca-Cola", "Soft Drink", "2L Bottle", 0, 22, 48, 12),
+        ("Coca-Cola", "Soft Drink", "330ml Can", 0, 8, 144, 48),
+        ("Coca-Cola Zero Sugar", "Soft Drink", "330ml Can", 0, 8, 96, 24),
+        ("Coca-Cola Zero Sugar", "Soft Drink", "500ml Bottle", 0, 9, 72, 24),
+        ("Diet Coke", "Soft Drink", "330ml Can", 0, 8, 60, 24),
         # Fanta range
-        ("Fanta Orange", "Soft Drink", "200ml Bottle", 2, 4, 240, 48),
-        ("Fanta Orange", "Soft Drink", "300ml Bottle", 3, 5, 240, 48),
-        ("Fanta Orange", "Soft Drink", "500ml Bottle", 5, 8, 144, 48),
-        ("Fanta Orange", "Soft Drink", "1.5L Bottle", 12, 18, 60, 24),
-        ("Fanta Orange", "Soft Drink", "330ml Can", 5, 8, 120, 48),
-        ("Fanta Pineapple", "Soft Drink", "300ml Bottle", 3, 5, 144, 48),
-        ("Fanta Pineapple", "Soft Drink", "500ml Bottle", 5, 8, 96, 24),
-        ("Fanta Pineapple", "Soft Drink", "330ml Can", 5, 8, 96, 24),
-        ("Fanta Strawberry", "Soft Drink", "330ml Can", 5, 8, 96, 24),
-        ("Fanta Grape", "Soft Drink", "330ml Can", 5, 8, 96, 24),
-        ("Fanta Lemon", "Soft Drink", "330ml Can", 5, 8, 96, 24),
+        ("Fanta Orange", "Soft Drink", "200ml Bottle", 0, 4, 240, 48),
+        ("Fanta Orange", "Soft Drink", "300ml Bottle", 0, 5, 240, 48),
+        ("Fanta Orange", "Soft Drink", "500ml Bottle", 0, 8, 144, 48),
+        ("Fanta Orange", "Soft Drink", "1.5L Bottle", 0, 18, 60, 24),
+        ("Fanta Orange", "Soft Drink", "330ml Can", 0, 8, 120, 48),
+        ("Fanta Pineapple", "Soft Drink", "300ml Bottle", 0, 5, 144, 48),
+        ("Fanta Pineapple", "Soft Drink", "500ml Bottle", 0, 8, 96, 24),
+        ("Fanta Pineapple", "Soft Drink", "330ml Can", 0, 8, 96, 24),
+        ("Fanta Strawberry", "Soft Drink", "330ml Can", 0, 8, 96, 24),
+        ("Fanta Grape", "Soft Drink", "330ml Can", 0, 8, 96, 24),
+        ("Fanta Lemon", "Soft Drink", "330ml Can", 0, 8, 96, 24),
         # Sprite range
-        ("Sprite", "Soft Drink", "200ml Bottle", 2, 4, 144, 48),
-        ("Sprite", "Soft Drink", "300ml Bottle", 3, 5, 144, 48),
-        ("Sprite", "Soft Drink", "500ml Bottle", 5, 8, 144, 48),
-        ("Sprite", "Soft Drink", "1.5L Bottle", 12, 18, 60, 24),
-        ("Sprite", "Soft Drink", "330ml Can", 5, 8, 120, 48),
+        ("Sprite", "Soft Drink", "200ml Bottle", 0, 4, 144, 48),
+        ("Sprite", "Soft Drink", "300ml Bottle", 0, 5, 144, 48),
+        ("Sprite", "Soft Drink", "500ml Bottle", 0, 8, 144, 48),
+        ("Sprite", "Soft Drink", "1.5L Bottle", 0, 18, 60, 24),
+        ("Sprite", "Soft Drink", "330ml Can", 0, 8, 120, 48),
         # Schweppes range
-        ("Schweppes Ginger Ale", "Soft Drink", "330ml Can", 4, 7, 96, 24),
-        ("Schweppes Tonic Water", "Soft Drink", "330ml Can", 4, 7, 96, 24),
-        ("Schweppes Lemon", "Soft Drink", "330ml Can", 4, 7, 96, 24),
-        ("Schweppes Chapman", "Soft Drink", "330ml Can", 4, 7, 96, 24),
+        ("Schweppes Ginger Ale", "Soft Drink", "330ml Can", 0, 7, 96, 24),
+        ("Schweppes Tonic Water", "Soft Drink", "330ml Can", 0, 7, 96, 24),
+        ("Schweppes Lemon", "Soft Drink", "330ml Can", 0, 7, 96, 24),
+        ("Schweppes Chapman", "Soft Drink", "330ml Can", 0, 7, 96, 24),
         # Bonaqua Water (Coca-Cola brand)
-        ("Bonaqua Still Water", "Water", "500ml Bottle", 3, 5, 144, 48),
-        ("Bonaqua Still Water", "Water", "1.5L Bottle", 6, 9, 96, 48),
+        ("Bonaqua Still Water", "Water", "500ml Bottle", 0, 5, 144, 48),
+        ("Bonaqua Still Water", "Water", "1.5L Bottle", 0, 9, 96, 48),
 
         # ── BEL-COLA RANGE ────────────────────────────────────────────────────
-        ("Bel-Cola Classic", "Soft Drink", "350ml Bottle", 3, 6, 160, 32),
-        ("Bel-Cola Classic", "Soft Drink", "330ml Can", 3, 6, 144, 48),
-        ("Bel-Cola Orange", "Soft Drink", "350ml Bottle", 3, 6, 144, 32),
-        ("Bel-Cola Pineapple", "Soft Drink", "350ml Bottle", 3, 6, 144, 32),
-        ("Bel-Cola Diet", "Soft Drink", "350ml Bottle", 3, 6, 96, 24),
-        ("Bel-Cola", "Soft Drink", "500ml Bottle", 4, 7, 120, 32),
+        ("Bel-Cola Classic", "Soft Drink", "350ml Bottle", 0, 6, 160, 32),
+        ("Bel-Cola Classic", "Soft Drink", "330ml Can", 0, 6, 144, 48),
+        ("Bel-Cola Orange", "Soft Drink", "350ml Bottle", 0, 6, 144, 32),
+        ("Bel-Cola Pineapple", "Soft Drink", "350ml Bottle", 0, 6, 144, 32),
+        ("Bel-Cola Diet", "Soft Drink", "350ml Bottle", 0, 6, 96, 24),
+        ("Bel-Cola", "Soft Drink", "500ml Bottle", 0, 7, 120, 32),
         # Bel-Aqua water (same Blow Group)
-        ("Bel-Aqua Water", "Water", "500ml Bottle", 2, 4, 240, 96),
-        ("Bel-Aqua Water", "Water", "1.5L Bottle", 5, 8, 120, 48),
+        ("Bel-Aqua Water", "Water", "500ml Bottle", 0, 4, 240, 96),
+        ("Bel-Aqua Water", "Water", "1.5L Bottle", 0, 8, 120, 48),
 
         # ── OTHER SOFT DRINKS ─────────────────────────────────────────────────
-        ("Pepsi", "Soft Drink", "300ml Bottle", 3, 5, 144, 48),
-        ("Pepsi", "Soft Drink", "330ml Can", 4, 7, 96, 48),
-        ("7UP", "Soft Drink", "350ml Bottle", 3, 5, 144, 48),
-        ("7UP", "Soft Drink", "330ml Can", 4, 7, 96, 24),
-        ("Mirinda Orange", "Soft Drink", "350ml Bottle", 3, 5, 120, 48),
-        ("Mirinda Strawberry", "Soft Drink", "350ml Bottle", 3, 5, 96, 24),
-        ("Vimto", "Soft Drink", "250ml Bottle", 3, 5, 120, 24),
-        ("Tropical Splash", "Soft Drink", "350ml Bottle", 2, 4, 144, 48),
-        ("Bigoo Cola", "Soft Drink", "350ml Bottle", 2, 4, 144, 48),
-        ("Bigoo Orange", "Soft Drink", "350ml Bottle", 2, 4, 144, 48),
-        ("Bigoo Lime", "Soft Drink", "350ml Bottle", 2, 4, 144, 48),
-        ("Bigoo Cocktail", "Soft Drink", "350ml Bottle", 2, 4, 144, 48),
+        ("Pepsi", "Soft Drink", "300ml Bottle", 0, 5, 144, 48),
+        ("Pepsi", "Soft Drink", "330ml Can", 0, 7, 96, 48),
+        ("7UP", "Soft Drink", "350ml Bottle", 0, 5, 144, 48),
+        ("7UP", "Soft Drink", "330ml Can", 0, 7, 96, 24),
+        ("Mirinda Orange", "Soft Drink", "350ml Bottle", 0, 5, 120, 48),
+        ("Mirinda Strawberry", "Soft Drink", "350ml Bottle", 0, 5, 96, 24),
+        ("Vimto", "Soft Drink", "250ml Bottle", 0, 5, 120, 24),
+        ("Tropical Splash", "Soft Drink", "350ml Bottle", 0, 4, 144, 48),
+        ("Bigoo Cola", "Soft Drink", "350ml Bottle", 0, 4, 144, 48),
+        ("Bigoo Orange", "Soft Drink", "350ml Bottle", 0, 4, 144, 48),
+        ("Bigoo Lime", "Soft Drink", "350ml Bottle", 0, 4, 144, 48),
+        ("Bigoo Cocktail", "Soft Drink", "350ml Bottle", 0, 4, 144, 48),
 
         # ── SPECIAL ICE RANGE ─────────────────────────────────────────────────
-        ("Special Ice Cola", "Soft Drink", "350ml Bottle", 2, 4, 160, 32),
-        ("Special Ice Orange", "Soft Drink", "350ml Bottle", 2, 4, 160, 32),
-        ("Special Ice Pineapple", "Soft Drink", "350ml Bottle", 2, 4, 160, 32),
-        ("Special Ice Cola", "Soft Drink", "500ml Bottle", 3, 5, 120, 32),
-        ("Special Ice Orange", "Soft Drink", "500ml Bottle", 3, 5, 120, 32),
-        ("Special Ice Water", "Water", "500ml Bottle", 2, 4, 240, 96),
-        ("Special Ice Water", "Water", "1.5L Bottle", 5, 7, 120, 48),
-        ("Special Ice Water", "Water", "5L Bottle", 12, 17, 48, 12),
-        ("Special Ice Water", "Water", "18.5L Jar", 30, 45, 20, 5),
+        ("Special Ice Cola", "Soft Drink", "350ml Bottle", 0, 4, 160, 32),
+        ("Special Ice Orange", "Soft Drink", "350ml Bottle", 0, 4, 160, 32),
+        ("Special Ice Pineapple", "Soft Drink", "350ml Bottle", 0, 4, 160, 32),
+        ("Special Ice Cola", "Soft Drink", "500ml Bottle", 0, 5, 120, 32),
+        ("Special Ice Orange", "Soft Drink", "500ml Bottle", 0, 5, 120, 32),
+        ("Special Ice Water", "Water", "500ml Bottle", 0, 4, 240, 96),
+        ("Special Ice Water", "Water", "1.5L Bottle", 0, 7, 120, 48),
+        ("Special Ice Water", "Water", "5L Bottle", 0, 17, 48, 12),
+        ("Special Ice Water", "Water", "18.5L Jar", 0, 45, 20, 5),
 
         # ── KALYPPO RANGE (Aquafresh) ─────────────────────────────────────────
-        ("Kalyppo Pineapple", "Juice", "250ml Pack", 2, 3, 288, 48),
-        ("Kalyppo Orange", "Juice", "250ml Pack", 2, 3, 288, 48),
-        ("Kalyppo Multifruit", "Juice", "250ml Pack", 2, 3, 288, 48),
-        ("Kalyppo Apple", "Juice", "250ml Pack", 2, 3, 288, 48),
-        ("Kalyppo Fruitimix", "Juice", "250ml Pack", 2, 3, 288, 48),
-        ("Kalyppo Cocopine", "Juice", "250ml Pack", 2, 3, 240, 48),
-        ("Kalyppo Oranpine", "Juice", "250ml Pack", 2, 3, 240, 48),
-        ("Kalyppo Tangerine", "Juice", "250ml Pack", 2, 3, 240, 48),
+        ("Kalyppo Pineapple", "Juice", "250ml Pack", 0, 3, 288, 48),
+        ("Kalyppo Orange", "Juice", "250ml Pack", 0, 3, 288, 48),
+        ("Kalyppo Multifruit", "Juice", "250ml Pack", 0, 3, 288, 48),
+        ("Kalyppo Apple", "Juice", "250ml Pack", 0, 3, 288, 48),
+        ("Kalyppo Fruitimix", "Juice", "250ml Pack", 0, 3, 288, 48),
+        ("Kalyppo Cocopine", "Juice", "250ml Pack", 0, 3, 240, 48),
+        ("Kalyppo Oranpine", "Juice", "250ml Pack", 0, 3, 240, 48),
+        ("Kalyppo Tangerine", "Juice", "250ml Pack", 0, 3, 240, 48),
         # Kalyppo carton (24 packs)
-        ("Kalyppo (24-Pack Carton)", "Juice", "24 x 250ml", 40, 60, 30, 5),
+        ("Kalyppo (24-Pack Carton)", "Juice", "24 x 250ml", 0, 60, 30, 5),
 
         # ── FRUTELLI RANGE (Aquafresh) ────────────────────────────────────────
-        ("Frutelli Mango", "Juice", "1L Pack", 8, 13, 72, 12),
-        ("Frutelli Multifruit", "Juice", "1L Pack", 8, 13, 72, 12),
-        ("Frutelli Tropic Mix", "Juice", "1L Pack", 8, 13, 72, 12),
-        ("Frutelli Pineapple", "Juice", "1L Pack", 8, 13, 72, 12),
-        ("Frutelli Orange", "Juice", "1L Pack", 8, 13, 72, 12),
+        ("Frutelli Mango", "Juice", "1L Pack", 0, 13, 72, 12),
+        ("Frutelli Multifruit", "Juice", "1L Pack", 0, 13, 72, 12),
+        ("Frutelli Tropic Mix", "Juice", "1L Pack", 0, 13, 72, 12),
+        ("Frutelli Pineapple", "Juice", "1L Pack", 0, 13, 72, 12),
+        ("Frutelli Orange", "Juice", "1L Pack", 0, 13, 72, 12),
         # Frutelli 6-pack carton
-        ("Frutelli (6-Pack Carton)", "Juice", "6 x 1L", 42, 65, 20, 5),
+        ("Frutelli (6-Pack Carton)", "Juice", "6 x 1L", 0, 65, 20, 5),
 
         # ── FANICE / FANMILK RANGE ────────────────────────────────────────────
-        ("FanIce Vanilla", "Dairy Drink", "120ml Pouch", 2, 3, 100, 25),
-        ("FanIce Strawberry", "Dairy Drink", "120ml Pouch", 2, 3, 100, 25),
-        ("FanIce Chocolate", "Dairy Drink", "120ml Pouch", 2, 3, 100, 25),
-        ("FanIce American Vanilla", "Dairy Drink", "120ml Pouch", 2, 3, 100, 25),
-        ("FanIce Banana", "Dairy Drink", "120ml Pouch", 2, 3, 100, 25),
-        ("FanIce Vanilla", "Dairy Drink", "500ml Tub", 15, 22, 36, 12),
-        ("FanIce Strawberry", "Dairy Drink", "500ml Tub", 15, 22, 36, 12),
-        ("FanIce Chocolate", "Dairy Drink", "500ml Tub", 15, 22, 36, 12),
-        ("FanIce 2-in-1 (Strawberry/Vanilla)", "Dairy Drink", "2L Tub", 32, 48, 12, 4),
-        ("FanIce 2-in-1 (Choc/Vanilla)", "Dairy Drink", "2L Tub", 32, 48, 12, 4),
-        ("FanYogo Strawberry", "Dairy Drink", "120ml Pouch", 2, 3, 100, 25),
-        ("FanYogo Vanilla", "Dairy Drink", "120ml Pouch", 2, 3, 100, 25),
-        ("FanChoco Chocolate Drink", "Dairy Drink", "120ml Pouch", 2, 3, 100, 25),
-        ("FanDango Pineapple", "Juice", "120ml Frozen Pouch", 2, 3, 100, 25),
-        ("FanDango Orange", "Juice", "120ml Frozen Pouch", 2, 3, 100, 25),
-        ("FanPop Lolly", "Juice", "Single Stick", 1, 2, 100, 25),
-        ("FanMaxx Vanilla", "Dairy Drink", "120ml Pouch", 3, 5, 80, 25),
+        ("FanIce Vanilla", "Dairy Drink", "120ml Pouch", 0, 3, 100, 25),
+        ("FanIce Strawberry", "Dairy Drink", "120ml Pouch", 0, 3, 100, 25),
+        ("FanIce Chocolate", "Dairy Drink", "120ml Pouch", 0, 3, 100, 25),
+        ("FanIce American Vanilla", "Dairy Drink", "120ml Pouch", 0, 3, 100, 25),
+        ("FanIce Banana", "Dairy Drink", "120ml Pouch", 0, 3, 100, 25),
+        ("FanIce Vanilla", "Dairy Drink", "500ml Tub", 0, 22, 36, 12),
+        ("FanIce Strawberry", "Dairy Drink", "500ml Tub", 0, 22, 36, 12),
+        ("FanIce Chocolate", "Dairy Drink", "500ml Tub", 0, 22, 36, 12),
+        ("FanIce 2-in-1 (Strawberry/Vanilla)", "Dairy Drink", "2L Tub", 0, 48, 12, 4),
+        ("FanIce 2-in-1 (Choc/Vanilla)", "Dairy Drink", "2L Tub", 0, 48, 12, 4),
+        ("FanYogo Strawberry", "Dairy Drink", "120ml Pouch", 0, 3, 100, 25),
+        ("FanYogo Vanilla", "Dairy Drink", "120ml Pouch", 0, 3, 100, 25),
+        ("FanChoco Chocolate Drink", "Dairy Drink", "120ml Pouch", 0, 3, 100, 25),
+        ("FanDango Pineapple", "Juice", "120ml Frozen Pouch", 0, 3, 100, 25),
+        ("FanDango Orange", "Juice", "120ml Frozen Pouch", 0, 3, 100, 25),
+        ("FanPop Lolly", "Juice", "Single Stick", 0, 2, 100, 25),
+        ("FanMaxx Vanilla", "Dairy Drink", "120ml Pouch", 0, 5, 80, 25),
 
         # ── OTHER JUICES ──────────────────────────────────────────────────────
-        ("Tampico Orange", "Juice", "500ml Bottle", 5, 8, 96, 24),
-        ("Tampico Citrus Punch", "Juice", "500ml Bottle", 5, 8, 96, 24),
-        ("Tampico Pineapple", "Juice", "500ml Bottle", 5, 8, 96, 24),
-        ("Chivita Active Orange", "Juice", "350ml Pack", 5, 8, 96, 24),
-        ("Chivita Active Pineapple", "Juice", "350ml Pack", 5, 8, 96, 24),
-        ("Chivita Active Mango", "Juice", "350ml Pack", 5, 8, 96, 24),
-        ("Five Alive Citrus", "Juice", "350ml Pack", 5, 8, 96, 24),
-        ("Five Alive Berry", "Juice", "350ml Pack", 5, 8, 96, 24),
-        ("Minute Maid Pulpy Orange", "Juice", "330ml Can", 5, 8, 96, 24),
-        ("Minute Maid Orange", "Juice", "1L Pack", 9, 14, 60, 12),
-        ("Rani Float Orange", "Juice", "240ml Can", 5, 9, 72, 24),
-        ("Rani Float Mango", "Juice", "240ml Can", 5, 9, 72, 24),
-        ("Blue Skies Pineapple Juice", "Juice", "1L Pack", 12, 18, 36, 12),
-        ("Blue Skies Mango Juice", "Juice", "1L Pack", 12, 18, 36, 12),
-        ("Juice Up Orange", "Juice", "500ml Bottle", 6, 9, 72, 24),
-        ("Juice Up Mango", "Juice", "500ml Bottle", 6, 9, 72, 24),
-        ("Hollandia Yoghurt Drink", "Dairy Drink", "500ml Pack", 8, 12, 60, 12),
-        ("Hollandia Yoghurt Drink", "Dairy Drink", "1L Pack", 14, 20, 36, 12),
+        ("Tampico Orange", "Juice", "500ml Bottle", 0, 8, 96, 24),
+        ("Tampico Citrus Punch", "Juice", "500ml Bottle", 0, 8, 96, 24),
+        ("Tampico Pineapple", "Juice", "500ml Bottle", 0, 8, 96, 24),
+        ("Chivita Active Orange", "Juice", "350ml Pack", 0, 8, 96, 24),
+        ("Chivita Active Pineapple", "Juice", "350ml Pack", 0, 8, 96, 24),
+        ("Chivita Active Mango", "Juice", "350ml Pack", 0, 8, 96, 24),
+        ("Five Alive Citrus", "Juice", "350ml Pack", 0, 8, 96, 24),
+        ("Five Alive Berry", "Juice", "350ml Pack", 0, 8, 96, 24),
+        ("Minute Maid Pulpy Orange", "Juice", "330ml Can", 0, 8, 96, 24),
+        ("Minute Maid Orange", "Juice", "1L Pack", 0, 14, 60, 12),
+        ("Rani Float Orange", "Juice", "240ml Can", 0, 9, 72, 24),
+        ("Rani Float Mango", "Juice", "240ml Can", 0, 9, 72, 24),
+        ("Blue Skies Pineapple Juice", "Juice", "1L Pack", 0, 18, 36, 12),
+        ("Blue Skies Mango Juice", "Juice", "1L Pack", 0, 18, 36, 12),
+        ("Juice Up Orange", "Juice", "500ml Bottle", 0, 9, 72, 24),
+        ("Juice Up Mango", "Juice", "500ml Bottle", 0, 9, 72, 24),
+        ("Hollandia Yoghurt Drink", "Dairy Drink", "500ml Pack", 0, 12, 60, 12),
+        ("Hollandia Yoghurt Drink", "Dairy Drink", "1L Pack", 0, 20, 36, 12),
 
         # ── WATER ─────────────────────────────────────────────────────────────
-        ("Voltic Water", "Water", "500ml Bottle", 2, 4, 240, 96),
-        ("Voltic Water", "Water", "1.5L Bottle", 5, 7, 120, 48),
-        ("Voltic Water", "Water", "5L Bottle", 12, 16, 60, 24),
-        ("Verna Water", "Water", "500ml Bottle", 3, 5, 240, 96),
-        ("Verna Water", "Water", "1.5L Bottle", 6, 9, 120, 48),
-        ("Verna Water", "Water", "5L Bottle", 14, 20, 48, 12),
-        ("Voltic Water", "Water", "330ml Can", 3, 5, 144, 48),
-        ("Sky Water", "Water", "500ml Bottle", 2, 4, 144, 48),
-        ("Sky Water", "Water", "1.5L Bottle", 5, 7, 96, 48),
-        ("Sachet Water", "Water", "Bag (30 pcs)", 3, 5, 100, 20),
+        ("Voltic Water", "Water", "500ml Bottle", 0, 4, 240, 96),
+        ("Voltic Water", "Water", "1.5L Bottle", 0, 7, 120, 48),
+        ("Voltic Water", "Water", "5L Bottle", 0, 16, 60, 24),
+        ("Verna Water", "Water", "500ml Bottle", 0, 5, 240, 96),
+        ("Verna Water", "Water", "1.5L Bottle", 0, 9, 120, 48),
+        ("Verna Water", "Water", "5L Bottle", 0, 20, 48, 12),
+        ("Voltic Water", "Water", "330ml Can", 0, 5, 144, 48),
+        ("Sky Water", "Water", "500ml Bottle", 0, 4, 144, 48),
+        ("Sky Water", "Water", "1.5L Bottle", 0, 7, 96, 48),
+        ("Sachet Water", "Water", "Bag (30 pcs)", 0, 5, 100, 20),
 
         # ── ENERGY DRINKS ─────────────────────────────────────────────────────
-        ("Lucozade Energy Original", "Energy Drink", "380ml Bottle", 7, 12, 96, 24),
-        ("Lucozade Energy Orange", "Energy Drink", "380ml Bottle", 7, 12, 96, 24),
-        ("Lucozade Energy Watermelon", "Energy Drink", "380ml Bottle", 7, 12, 96, 24),
-        ("Lucozade Sport Orange", "Energy Drink", "500ml Bottle", 8, 13, 96, 24),
-        ("Lucozade Sport Mango", "Energy Drink", "500ml Bottle", 8, 13, 72, 24),
-        ("Rush Energy Drink", "Energy Drink", "250ml Can", 5, 8, 96, 24),
-        ("Rush Energy Drink", "Energy Drink", "500ml Can", 8, 13, 72, 24),
-        ("Predator Energy", "Energy Drink", "250ml Can", 5, 8, 96, 24),
-        ("Power Horse", "Energy Drink", "250ml Can", 6, 10, 96, 24),
-        ("Burn Energy", "Energy Drink", "250ml Can", 8, 12, 60, 12),
-        ("Monster Energy Original", "Energy Drink", "500ml Can", 18, 25, 36, 12),
-        ("Monster Energy Green", "Energy Drink", "500ml Can", 18, 25, 36, 12),
+        ("Lucozade Energy Original", "Energy Drink", "380ml Bottle", 0, 12, 96, 24),
+        ("Lucozade Energy Orange", "Energy Drink", "380ml Bottle", 0, 12, 96, 24),
+        ("Lucozade Energy Watermelon", "Energy Drink", "380ml Bottle", 0, 12, 96, 24),
+        ("Lucozade Sport Orange", "Energy Drink", "500ml Bottle", 0, 13, 96, 24),
+        ("Lucozade Sport Mango", "Energy Drink", "500ml Bottle", 0, 13, 72, 24),
+        ("Rush Energy Drink", "Energy Drink", "250ml Can", 0, 8, 96, 24),
+        ("Rush Energy Drink", "Energy Drink", "500ml Can", 0, 13, 72, 24),
+        ("Predator Energy", "Energy Drink", "250ml Can", 0, 8, 96, 24),
+        ("Power Horse", "Energy Drink", "250ml Can", 0, 10, 96, 24),
+        ("Burn Energy", "Energy Drink", "250ml Can", 0, 12, 60, 12),
+        ("Monster Energy Original", "Energy Drink", "500ml Can", 0, 25, 36, 12),
+        ("Monster Energy Green", "Energy Drink", "500ml Can", 0, 25, 36, 12),
 
         # ── SPIRITS ───────────────────────────────────────────────────────────
-        ("Smirnoff Vodka", "Spirit", "200ml Bottle", 14, 20, 60, 12),
-        ("Smirnoff Vodka", "Spirit", "750ml Bottle", 45, 65, 36, 12),
-        ("Smirnoff Vodka", "Spirit", "1L Bottle", 60, 85, 24, 6),
-        ("Alomo Bitters (Kasapreko)", "Spirit", "200ml Bottle", 10, 15, 60, 12),
-        ("Alomo Bitters (Kasapreko)", "Spirit", "750ml Bottle", 30, 45, 36, 12),
-        ("Orijin Spirit", "Spirit", "200ml Bottle", 12, 18, 60, 12),
-        ("Orijin Spirit", "Spirit", "750ml Bottle", 40, 58, 36, 12),
-        ("Akpeteshie (Local Gin)", "Spirit", "200ml Bottle", 6, 10, 60, 12),
-        ("Akpeteshie (Local Gin)", "Spirit", "750ml Bottle", 20, 30, 36, 12),
-        ("GIHOC Akpeteshie", "Spirit", "750ml Bottle", 25, 35, 36, 12),
-        ("Zola Bitters", "Spirit", "200ml Bottle", 8, 13, 60, 12),
-        ("Kasapreko Herb Liqueur", "Spirit", "200ml Bottle", 10, 15, 60, 12),
-        ("Kasapreko Herb Liqueur", "Spirit", "750ml Bottle", 30, 45, 36, 12),
-        ("Richot Brandy", "Spirit", "750ml Bottle", 60, 85, 24, 6),
-        ("Johnnie Walker Red Label", "Whisky", "750ml Bottle", 110, 150, 24, 6),
-        ("Johnnie Walker Black Label", "Whisky", "750ml Bottle", 180, 240, 12, 3),
-        ("Jameson Whiskey", "Whisky", "750ml Bottle", 150, 200, 12, 3),
-        ("Baileys Irish Cream", "Spirit", "750ml Bottle", 120, 160, 12, 3),
-        ("Hennessy VS", "Spirit", "750ml Bottle", 300, 400, 6, 3),
-        ("Jack Daniel's", "Whisky", "750ml Bottle", 200, 270, 12, 3),
-        ("Gordon's Gin", "Spirit", "750ml Bottle", 90, 125, 12, 3),
-        ("Gordon's Pink Gin", "Spirit", "750ml Bottle", 95, 130, 12, 3),
+        ("Smirnoff Vodka", "Spirit", "200ml Bottle", 0, 20, 60, 12),
+        ("Smirnoff Vodka", "Spirit", "750ml Bottle", 0, 65, 36, 12),
+        ("Smirnoff Vodka", "Spirit", "1L Bottle", 0, 85, 24, 6),
+        ("Alomo Bitters (Kasapreko)", "Spirit", "200ml Bottle", 0, 15, 60, 12),
+        ("Alomo Bitters (Kasapreko)", "Spirit", "750ml Bottle", 0, 45, 36, 12),
+        ("Orijin Spirit", "Spirit", "200ml Bottle", 0, 18, 60, 12),
+        ("Orijin Spirit", "Spirit", "750ml Bottle", 0, 58, 36, 12),
+        ("Akpeteshie (Local Gin)", "Spirit", "200ml Bottle", 0, 10, 60, 12),
+        ("Akpeteshie (Local Gin)", "Spirit", "750ml Bottle", 0, 30, 36, 12),
+        ("GIHOC Akpeteshie", "Spirit", "750ml Bottle", 0, 35, 36, 12),
+        ("Zola Bitters", "Spirit", "200ml Bottle", 0, 13, 60, 12),
+        ("Kasapreko Herb Liqueur", "Spirit", "200ml Bottle", 0, 15, 60, 12),
+        ("Kasapreko Herb Liqueur", "Spirit", "750ml Bottle", 0, 45, 36, 12),
+        ("Richot Brandy", "Spirit", "750ml Bottle", 0, 85, 24, 6),
+        ("Johnnie Walker Red Label", "Whisky", "750ml Bottle", 0, 150, 24, 6),
+        ("Johnnie Walker Black Label", "Whisky", "750ml Bottle", 0, 240, 12, 3),
+        ("Jameson Whiskey", "Whisky", "750ml Bottle", 0, 200, 12, 3),
+        ("Baileys Irish Cream", "Spirit", "750ml Bottle", 0, 160, 12, 3),
+        ("Hennessy VS", "Spirit", "750ml Bottle", 0, 400, 6, 3),
+        ("Jack Daniel's", "Whisky", "750ml Bottle", 0, 270, 12, 3),
+        ("Gordon's Gin", "Spirit", "750ml Bottle", 0, 125, 12, 3),
+        ("Gordon's Pink Gin", "Spirit", "750ml Bottle", 0, 130, 12, 3),
 
         # ── WINE ──────────────────────────────────────────────────────────────
-        ("Four Cousins Sweet Red", "Wine", "750ml Bottle", 35, 50, 24, 6),
-        ("Four Cousins Sweet White", "Wine", "750ml Bottle", 35, 50, 24, 6),
-        ("Four Cousins Sweet Rosé", "Wine", "750ml Bottle", 35, 50, 24, 6),
-        ("Robertson Winery Red", "Wine", "750ml Bottle", 40, 58, 24, 6),
-        ("Robertson Winery White", "Wine", "750ml Bottle", 40, 58, 24, 6),
-        ("Amarula Cream", "Wine/Liqueur", "750ml Bottle", 80, 110, 12, 3),
+        ("Four Cousins Sweet Red", "Wine", "750ml Bottle", 0, 50, 24, 6),
+        ("Four Cousins Sweet White", "Wine", "750ml Bottle", 0, 50, 24, 6),
+        ("Four Cousins Sweet Rosé", "Wine", "750ml Bottle", 0, 50, 24, 6),
+        ("Robertson Winery Red", "Wine", "750ml Bottle", 0, 58, 24, 6),
+        ("Robertson Winery White", "Wine", "750ml Bottle", 0, 58, 24, 6),
+        ("Amarula Cream", "Wine/Liqueur", "750ml Bottle", 0, 110, 12, 3),
 
         # ── LOCAL / TRADITIONAL DRINKS ────────────────────────────────────────
-        ("Sobolo (Hibiscus Drink)", "Local Drink", "500ml Bottle", 4, 7, 60, 12),
-        ("Sobolo (Hibiscus Drink)", "Local Drink", "1L Bottle", 7, 12, 36, 12),
-        ("Asaana (Corn Drink)", "Local Drink", "500ml Bottle", 4, 7, 36, 12),
-        ("Ginger Beer (Local)", "Local Drink", "500ml Bottle", 4, 7, 36, 12),
-        ("Palm Wine", "Local Drink", "750ml Bottle", 8, 14, 24, 6),
+        ("Sobolo (Hibiscus Drink)", "Local Drink", "500ml Bottle", 0, 7, 60, 12),
+        ("Sobolo (Hibiscus Drink)", "Local Drink", "1L Bottle", 0, 12, 36, 12),
+        ("Asaana (Corn Drink)", "Local Drink", "500ml Bottle", 0, 7, 36, 12),
+        ("Ginger Beer (Local)", "Local Drink", "500ml Bottle", 0, 7, 36, 12),
+        ("Palm Wine", "Local Drink", "750ml Bottle", 0, 14, 24, 6),
     ]
     c.executemany(
         "INSERT INTO products (name, category, size, buy_price, sell_price, stock_qty, low_stock_alert) VALUES (?,?,?,?,?,?,?)",
@@ -728,7 +728,7 @@ with tab_sale:
                     with st.container():
                         c1, c2, c3, c4 = st.columns([3, 2, 2, 1])
                         c1.write(f"**{prod['name']}** — {prod['size']}")
-                        c2.write(f"{currency} {prod['sell_price']:.2f}")
+                        c2.write(f"**{currency} {prod['sell_price']:.2f}** (wholesale)")
                         c3.write(f"{stock_color} Stock: **{prod['stock_qty']}**")
                         add_qty = c4.number_input("", min_value=1, max_value=max(1, prod['stock_qty']),
                                                    value=1, key=f"qty_{prod['id']}", label_visibility="collapsed")
@@ -862,10 +862,10 @@ with tab_inv:
             df = pd.DataFrame(filtered)
             df = df.rename(columns={
                 'name': 'Name', 'category': 'Category', 'size': 'Size',
-                'buy_price': f'Cost ({currency})', 'sell_price': f'Price ({currency})',
+                'sell_price': f'Wholesale Price ({currency})',
                 'stock_qty': 'In Stock', 'low_stock_alert': 'Alert Level'
             })
-            display_cols = ['Name', 'Category', 'Size', f'Cost ({currency})', f'Price ({currency})', 'In Stock', 'Alert Level']
+            display_cols = ['Name', 'Category', 'Size', f'Wholesale Price ({currency})', 'In Stock', 'Alert Level']
 
             # Highlight low stock
             def highlight_low(row):
@@ -900,10 +900,9 @@ with tab_inv:
             prod_size = c3.text_input("Size *", placeholder="e.g. 330ml Bottle")
             prod_alert = c4.number_input("Low Stock Alert (units)", min_value=1, value=12)
 
-            c5, c6, c7 = st.columns(3)
-            prod_buy = c5.number_input(f"Cost Price ({currency})", min_value=0.0, value=0.0, step=0.5)
-            prod_sell = c6.number_input(f"Selling Price ({currency})", min_value=0.0, value=0.0, step=0.5)
-            prod_stock = c7.number_input("Opening Stock (units)", min_value=0, value=0)
+            c5, c6 = st.columns(2)
+            prod_sell = c5.number_input(f"Wholesale Price ({currency})", min_value=0.0, value=0.0, step=0.5)
+            prod_stock = c6.number_input("Opening Stock (units)", min_value=0, value=0)
 
             submitted = st.form_submit_button("✅ Add Product", use_container_width=True, type="primary")
             if submitted:
@@ -911,7 +910,7 @@ with tab_inv:
                     conn = get_db()
                     conn.execute(
                         "INSERT INTO products (name, category, size, buy_price, sell_price, stock_qty, low_stock_alert) VALUES (?,?,?,?,?,?,?)",
-                        (prod_name.strip(), prod_cat, prod_size.strip(), prod_buy, prod_sell, prod_stock, prod_alert)
+                        (prod_name.strip(), prod_cat, prod_size.strip(), 0, prod_sell, prod_stock, prod_alert)
                     )
                     conn.commit()
                     conn.close()
@@ -941,10 +940,9 @@ with tab_inv:
                     c3, c4 = st.columns(2)
                     new_size = c3.text_input("Size", value=prod['size'])
                     new_alert = c4.number_input("Low Stock Alert", min_value=1, value=prod['low_stock_alert'])
-                    c5, c6, c7 = st.columns(3)
-                    new_buy = c5.number_input(f"Cost Price ({currency})", min_value=0.0, value=float(prod['buy_price']), step=0.5)
-                    new_sell = c6.number_input(f"Sell Price ({currency})", min_value=0.0, value=float(prod['sell_price']), step=0.5)
-                    new_stock = c7.number_input("Stock Quantity", min_value=0, value=int(prod['stock_qty']))
+                    c5, c6 = st.columns(2)
+                    new_sell = c5.number_input(f"Wholesale Price ({currency})", min_value=0.0, value=float(prod['sell_price']), step=0.5)
+                    new_stock = c6.number_input("Stock Quantity", min_value=0, value=int(prod['stock_qty']))
 
                     col_save, col_del = st.columns(2)
                     save = col_save.form_submit_button("💾 Save Changes", use_container_width=True, type="primary")
@@ -953,8 +951,8 @@ with tab_inv:
                     if save:
                         conn = get_db()
                         conn.execute(
-                            "UPDATE products SET name=?, category=?, size=?, buy_price=?, sell_price=?, stock_qty=?, low_stock_alert=? WHERE id=?",
-                            (new_name, new_cat, new_size, new_buy, new_sell, new_stock, new_alert, selected_id)
+                            "UPDATE products SET name=?, category=?, size=?, sell_price=?, stock_qty=?, low_stock_alert=? WHERE id=?",
+                            (new_name, new_cat, new_size, new_sell, new_stock, new_alert, selected_id)
                         )
                         conn.commit()
                         conn.close()
@@ -999,13 +997,13 @@ with tab_damage:
                 dmg_name = selected_prod['name']
                 dmg_size = selected_prod['size']
                 dmg_pid = selected_prod['id']
-                dmg_cost = st.number_input(f"Unit Cost ({currency})", min_value=0.0,
-                                            value=float(selected_prod['buy_price']), step=0.5)
+                dmg_cost = st.number_input(f"Unit Wholesale Price ({currency})", min_value=0.0,
+                                            value=float(selected_prod['sell_price']), step=0.5)
             else:
                 dmg_name = st.text_input("Product Name", placeholder="e.g. Unknown brand")
                 dmg_size = st.text_input("Size", placeholder="e.g. 500ml")
                 dmg_pid = 0
-                dmg_cost = st.number_input(f"Unit Cost ({currency})", min_value=0.0, value=0.0, step=0.5)
+                dmg_cost = st.number_input(f"Unit Wholesale Price ({currency})", min_value=0.0, value=0.0, step=0.5)
 
             dmg_qty = st.number_input("Quantity Damaged", min_value=1, value=1)
             dmg_reason = st.selectbox("Reason", [
@@ -1047,7 +1045,7 @@ with tab_damage:
         if damage_records:
             df_dmg = pd.DataFrame(damage_records)
             df_dmg = df_dmg[['date_logged', 'product_name', 'size', 'qty', 'unit_cost', 'total_loss', 'reason']]
-            df_dmg.columns = ['Date', 'Product', 'Size', 'Qty', f'Unit Cost', 'Total Loss', 'Reason']
+            df_dmg.columns = ['Date', 'Product', 'Size', 'Qty', f'Wholesale Price', 'Total Loss', 'Reason']
             st.dataframe(df_dmg, use_container_width=True, height=350)
             total_dmg_loss = sum(r['total_loss'] for r in damage_records)
             st.error(f"💸 Total Loss ({dmg_range}): **{currency} {total_dmg_loss:.2f}**")
