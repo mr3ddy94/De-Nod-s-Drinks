@@ -206,6 +206,14 @@ def init_db():
         value TEXT
     )''')
 
+    # ── Users table: name + 4-digit PIN ──
+    c.execute('''CREATE TABLE IF NOT EXISTS users (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT NOT NULL,
+        pin TEXT NOT NULL,
+        active INTEGER DEFAULT 1
+    )''')
+
     defaults = {
         'shop_name': "De-Nod's Wholesale Drinks",
         'shop_address': 'Ghana',
@@ -216,6 +224,14 @@ def init_db():
     }
     for k, v in defaults.items():
         c.execute("INSERT OR IGNORE INTO settings VALUES (?,?)", (k, v))
+
+    # Default users — owner + one staff slot
+    existing_users = c.execute("SELECT COUNT(*) FROM users").fetchone()[0]
+    if existing_users == 0:
+        c.executemany("INSERT INTO users (name, pin) VALUES (?,?)", [
+            ("Owner (Dad)", "1234"),
+            ("Staff",       "5678"),
+        ])
 
     conn.commit()
 
@@ -239,6 +255,24 @@ def set_setting(key, value):
     conn.execute("INSERT OR REPLACE INTO settings VALUES (?,?)", (key, value))
     conn.commit()
     conn.close()
+
+
+# ── Auth helpers ───────────────────────────────────────────────────────────────
+def check_pin(pin_entered):
+    """Return user name if PIN matches an active user, else None."""
+    conn = get_db()
+    row = conn.execute(
+        "SELECT name FROM users WHERE pin=? AND active=1", (pin_entered.strip(),)
+    ).fetchone()
+    conn.close()
+    return row[0] if row else None
+
+
+def get_all_users():
+    conn = get_db()
+    rows = conn.execute("SELECT id, name, pin, active FROM users ORDER BY id").fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
 
 
 def sync_new_products():
@@ -797,25 +831,152 @@ if 'search_results' not in st.session_state:
     st.session_state.search_results = []
 if 'print_now' not in st.session_state:
     st.session_state.print_now = False
+if 'logged_in' not in st.session_state:
+    st.session_state.logged_in = False
+if 'logged_in_user' not in st.session_state:
+    st.session_state.logged_in_user = ""
+# ── Brute-force protection ─────────────────────────────────────────────────────
+if 'pin_attempts' not in st.session_state:
+    st.session_state.pin_attempts = 0       # wrong attempts this session
+if 'lockout_until' not in st.session_state:
+    st.session_state.lockout_until = None   # datetime when lockout ends
+
+MAX_ATTEMPTS  = 5     # wrong tries before lockout
+LOCKOUT_MINS  = 10    # minutes to lock after MAX_ATTEMPTS
 
 
 # ── Init DB ────────────────────────────────────────────────────────────────────
 init_db()
+
+# ══════════════════════════════════════════════════════════════════════════════
+#  PIN LOGIN GATE  —  nothing below renders until the user is authenticated
+# ══════════════════════════════════════════════════════════════════════════════
+if not st.session_state.logged_in:
+    st.markdown("""
+    <style>
+      .login-wrap {
+          max-width: 380px;
+          margin: 80px auto 0 auto;
+          background: white;
+          border-radius: 22px;
+          padding: 2.5rem 2rem 2rem 2rem;
+          box-shadow: 0 8px 40px rgba(0,0,0,0.13);
+          text-align: center;
+      }
+      .login-logo  { font-size: 3.5rem; margin-bottom: 0.3rem; }
+      .login-title { font-size: 1.7rem; font-weight: 900; color: #1a2035; margin-bottom: 0.2rem; }
+      .login-sub   { font-size: 1rem; color: #666; margin-bottom: 1.5rem; }
+    </style>
+    <div class="login-wrap">
+      <div class="login-logo">🍺</div>
+      <div class="login-title">De-Nod's</div>
+      <div class="login-sub">Wholesale Drinks Manager</div>
+    </div>
+    """, unsafe_allow_html=True)
+
+    _, mid, _ = st.columns([1, 2, 1])
+    with mid:
+        st.markdown("<br>", unsafe_allow_html=True)
+
+        # ── Check if currently locked out ─────────────────────────────────────
+        now_dt = datetime.now()
+        locked = (
+            st.session_state.lockout_until is not None
+            and now_dt < st.session_state.lockout_until
+        )
+
+        if locked:
+            remaining = int((st.session_state.lockout_until - now_dt).total_seconds())
+            mins, secs = divmod(remaining, 60)
+            st.error(
+                f"🔒 Too many wrong attempts.\n\n"
+                f"Please wait **{mins}m {secs:02d}s** before trying again."
+            )
+            st.caption("The app will unlock automatically. Do not close this page.")
+            # Auto-refresh every second so the countdown updates
+            st.markdown(
+                '<meta http-equiv="refresh" content="1">',
+                unsafe_allow_html=True
+            )
+
+        else:
+            # Lockout expired — reset counter
+            if st.session_state.lockout_until is not None:
+                st.session_state.pin_attempts = 0
+                st.session_state.lockout_until = None
+
+            attempts_left = MAX_ATTEMPTS - st.session_state.pin_attempts
+            if st.session_state.pin_attempts > 0:
+                st.warning(
+                    f"⚠️ {st.session_state.pin_attempts} wrong attempt(s). "
+                    f"{attempts_left} remaining before {LOCKOUT_MINS}-minute lockout."
+                )
+
+            pin_input = st.text_input(
+                "🔐  Enter your PIN",
+                type="password",
+                placeholder="e.g. 1234",
+                key="pin_input",
+                help="Ask the owner for your PIN"
+            )
+            login_btn = st.button("➡️  Enter App", use_container_width=True, type="primary")
+
+            if login_btn or (pin_input and len(pin_input) >= 4):
+                if pin_input:
+                    user = check_pin(pin_input)
+                    if user:
+                        # ✅ Correct — reset counters and let them in
+                        st.session_state.logged_in      = True
+                        st.session_state.logged_in_user = user
+                        st.session_state.pin_attempts   = 0
+                        st.session_state.lockout_until  = None
+                        st.rerun()
+                    else:
+                        # ❌ Wrong PIN — increment counter
+                        st.session_state.pin_attempts += 1
+                        if st.session_state.pin_attempts >= MAX_ATTEMPTS:
+                            st.session_state.lockout_until = (
+                                datetime.now() + timedelta(minutes=LOCKOUT_MINS)
+                            )
+                            st.error(
+                                f"🔒 Too many wrong attempts. "
+                                f"App locked for {LOCKOUT_MINS} minutes."
+                            )
+                        else:
+                            remaining_tries = MAX_ATTEMPTS - st.session_state.pin_attempts
+                            st.error(
+                                f"❌ Wrong PIN. "
+                                f"{remaining_tries} attempt(s) left before lockout."
+                            )
+                        st.rerun()
+
+    st.stop()   # ← nothing below runs until logged in
+# ══════════════════════════════════════════════════════════════════════════════
 
 # ── Header ─────────────────────────────────────────────────────────────────────
 low_stock = get_low_stock_products()
 alert_text = f"⚠️ {len(low_stock)} item(s) low on stock" if low_stock else "✅ All stock levels OK"
 currency = get_setting('currency', 'GHS')
 
-st.markdown(f"""
-<div class="app-header">
-  <div style="font-size:3rem;">🍺</div>
-  <div>
-    <h1>De-Nod's Wholesale Drinks</h1>
-    <p class="sub">📍 Ghana &nbsp;|&nbsp; {datetime.now().strftime("%A, %d %B %Y")} &nbsp;|&nbsp; {alert_text}</p>
-  </div>
-</div>
-""", unsafe_allow_html=True)
+hdr_col, signout_col = st.columns([5, 1])
+with hdr_col:
+    st.markdown(f"""
+    <div class="app-header">
+      <div style="font-size:3rem;">🍺</div>
+      <div>
+        <h1>De-Nod's Wholesale Drinks</h1>
+        <p class="sub">👤 {st.session_state.logged_in_user} &nbsp;|&nbsp; {datetime.now().strftime("%A, %d %B %Y")} &nbsp;|&nbsp; {alert_text}</p>
+      </div>
+    </div>
+    """, unsafe_allow_html=True)
+with signout_col:
+    st.markdown("<br><br>", unsafe_allow_html=True)
+    if st.button("🔒 Sign Out", use_container_width=True):
+        st.session_state.logged_in = False
+        st.session_state.logged_in_user = ""
+        st.session_state.cart = []
+        st.session_state.last_receipt = None
+        st.rerun()
 
 # ── Main Tabs ──────────────────────────────────────────────────────────────────
 tab_sale, tab_inv, tab_damage, tab_reports, tab_settings = st.tabs([
@@ -1387,3 +1548,62 @@ with tab_settings:
         st.markdown("---")
         st.markdown("**ℹ️ App Info**")
         st.info("De-Nod's Drinks Manager v1.0\nBuilt for De-Nod's Wholesale Drinks, Ghana.\nData stored locally in denods.db")
+
+# ── PIN / User Management (full-width below the two columns) ───────────────────
+with tab_settings:
+    st.markdown("---")
+    st.markdown('<div class="section-title">🔐 PIN & User Management</div>', unsafe_allow_html=True)
+    st.caption("Each person who uses the app gets their own name and PIN. Change any PIN here at any time.")
+
+    users = get_all_users()
+
+    # Edit existing users
+    for u in users:
+        with st.expander(f"{'✅' if u['active'] else '🚫'}  {u['name']}", expanded=False):
+            with st.form(f"user_form_{u['id']}"):
+                c1, c2, c3 = st.columns([3, 2, 2])
+                new_uname = c1.text_input("Name", value=u['name'], key=f"uname_{u['id']}")
+                new_pin   = c2.text_input("PIN (numbers only)", value=u['pin'],
+                                          key=f"upin_{u['id']}", max_chars=6,
+                                          help="4–6 digit PIN")
+                new_active = c3.selectbox("Status", ["Active", "Disabled"],
+                                          index=0 if u['active'] else 1,
+                                          key=f"uact_{u['id']}")
+                if st.form_submit_button("💾 Save", use_container_width=True, type="primary"):
+                    if new_pin.strip().isdigit() and len(new_pin.strip()) >= 4:
+                        conn = get_db()
+                        conn.execute(
+                            "UPDATE users SET name=?, pin=?, active=? WHERE id=?",
+                            (new_uname.strip(), new_pin.strip(),
+                             1 if new_active == "Active" else 0, u['id'])
+                        )
+                        conn.commit()
+                        conn.close()
+                        st.success(f"✅ Updated {new_uname}.")
+                        st.rerun()
+                    else:
+                        st.error("PIN must be 4–6 digits (numbers only).")
+
+    # Add a new user
+    st.markdown("**➕ Add New User**")
+    with st.form("add_user_form", clear_on_submit=True):
+        ca, cb = st.columns(2)
+        add_name = ca.text_input("Name", placeholder="e.g. Abena")
+        add_pin  = cb.text_input("PIN", placeholder="e.g. 4321", max_chars=6)
+        if st.form_submit_button("➕ Add User", use_container_width=True, type="primary"):
+            if add_name.strip() and add_pin.strip().isdigit() and len(add_pin.strip()) >= 4:
+                # Check PIN not already taken
+                conn = get_db()
+                clash = conn.execute("SELECT name FROM users WHERE pin=? AND active=1",
+                                     (add_pin.strip(),)).fetchone()
+                if clash:
+                    st.error(f"That PIN is already used by {clash[0]}. Choose a different one.")
+                else:
+                    conn.execute("INSERT INTO users (name, pin) VALUES (?,?)",
+                                 (add_name.strip(), add_pin.strip()))
+                    conn.commit()
+                    st.success(f"✅ {add_name} added! They can now log in with PIN {add_pin}.")
+                    st.rerun()
+                conn.close()
+            else:
+                st.error("Please enter a name and a PIN of at least 4 digits.")
