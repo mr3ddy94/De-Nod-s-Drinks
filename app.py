@@ -1494,60 +1494,91 @@ if _page == '📦  Inventory':
             if not all_prods_upd:
                 st.info("No products yet. Add some in the ➕ Add Product tab.")
             else:
-                # ── Smart search: type to filter, click to select ──────────────
-                st.markdown("**🔍 Search for a product to update:**")
+                # ── Smart search → product cards ──────────────────────────
+                # If arriving from a low-stock notification, jump straight to that product
+                arriving_id = st.session_state.get("restock_product_id")
+                if arriving_id:
+                    st.session_state["selected_restock_id"] = arriving_id
+                    st.session_state.restock_product_id = None
+
+                if "selected_restock_id" not in st.session_state:
+                    st.session_state["selected_restock_id"] = None
+
+                # Search bar
+                st.markdown("**🔍 Search product to restock:**")
                 search_text = st.text_input(
-                    "Type product name or size...",
-                    placeholder="e.g. Club Beer, Kalyppo, 500ml...",
+                    "search_restock_label",
+                    placeholder="Type name, size or category — e.g. Club Beer, 500ml, Water...",
                     key="restock_search",
-                    value=""
+                    label_visibility="collapsed"
                 )
 
-                # If arriving from a low-stock notification, pre-select that product
-                arriving_id = st.session_state.get("restock_product_id")
-
-                # Filter products by search text
+                # Filter
                 if search_text.strip():
                     q = search_text.strip().lower()
                     filtered_prods = [p for p in all_prods_upd
                                       if q in p['name'].lower() or q in p['size'].lower()
                                       or q in p['category'].lower()]
+                    show_list = True
                 else:
-                    filtered_prods = all_prods_upd
+                    filtered_prods = []
+                    show_list = False
 
-                if not filtered_prods:
-                    st.warning("No products match that search.")
-                    selected_id_upd = None
-                else:
-                    # Build option labels with stock level indicators
-                    def stock_icon(p):
-                        if p['stock_qty'] <= 0:          return "🔴"
-                        if p['stock_qty'] <= p['low_stock_alert']: return "🟡"
-                        return "🟢"
+                # Show matching product cards (max 12 at a time)
+                if show_list:
+                    if not filtered_prods:
+                        st.warning("No products match — try a different search term.")
+                    else:
+                        st.caption(f"{len(filtered_prods)} match(es) — click a product to select it:")
+                        for p in filtered_prods[:12]:
+                            if p['stock_qty'] <= 0:
+                                badge_color = "#c62828"; badge_text = "OUT OF STOCK"
+                            elif p['stock_qty'] <= p['low_stock_alert']:
+                                badge_color = "#e65100"; badge_text = f"LOW  {p['stock_qty']} left"
+                            else:
+                                badge_color = "#2e7d32"; badge_text = f"✅  {p['stock_qty']} in stock"
 
-                    option_labels = [
-                        f"{stock_icon(p)}  {p['name']}  ({p['size']})"
-                        f"  —  Stock: {p['stock_qty']}"
-                        for p in filtered_prods
-                    ]
-                    id_map = {label: p['id'] for label, p in zip(option_labels, filtered_prods)}
+                            card_html = f"""
+                            <div style="
+                                border:2px solid {'#c62828' if p['stock_qty']<=0 else '#e65100' if p['stock_qty']<=p['low_stock_alert'] else '#e0e0e0'};
+                                border-radius:10px;padding:10px 14px;margin-bottom:6px;
+                                background:{'#fff3f3' if p['stock_qty']<=0 else '#fff8f0' if p['stock_qty']<=p['low_stock_alert'] else '#f9f9f9'};
+                                display:flex;justify-content:space-between;align-items:center;">
+                              <div>
+                                <div style="font-size:1rem;font-weight:700;color:#1a2035;">{p['name']}</div>
+                                <div style="font-size:0.82rem;color:#666;margin-top:2px;">{p['size']} &nbsp;·&nbsp; {p['category']}</div>
+                              </div>
+                              <div style="background:{badge_color};color:white;padding:4px 10px;
+                                          border-radius:20px;font-size:0.78rem;font-weight:700;white-space:nowrap;">
+                                {badge_text}
+                              </div>
+                            </div>"""
+                            st.markdown(card_html, unsafe_allow_html=True)
+                            if st.button(f"Select  →  {p['name']} ({p['size']})",
+                                         key=f"sel_prod_{p['id']}",
+                                         use_container_width=True):
+                                st.session_state["selected_restock_id"] = p['id']
+                                st.rerun()
+                        if len(filtered_prods) > 12:
+                            st.caption(f"Showing first 12 of {len(filtered_prods)} — refine your search to narrow down.")
 
-                    # If arriving from restock notification, pre-select that item
-                    default_idx = 0
-                    if arriving_id:
-                        for i, p in enumerate(filtered_prods):
-                            if p['id'] == arriving_id:
-                                default_idx = i
-                                break
-                        st.session_state.restock_product_id = None  # consumed
-
-                    selected_label_upd = st.selectbox(
-                        f"{len(filtered_prods)} product(s) found — select one:",
-                        option_labels,
-                        index=default_idx,
-                        key="update_prod_sel"
-                    )
-                    selected_id_upd = id_map[selected_label_upd]
+                # Show the selected product panel
+                selected_id_upd = st.session_state.get("selected_restock_id")
+                if selected_id_upd:
+                    # Show a clear "currently editing" header with a change button
+                    sel_p = next((p for p in all_prods_upd if p['id'] == selected_id_upd), None)
+                    if sel_p:
+                        st.markdown("---")
+                        top_left, top_right = st.columns([5, 2])
+                        top_left.markdown(
+                            f"**Editing:** &nbsp; <span style='font-size:1.1rem;font-weight:800;"
+                            f"color:#1a2035'>{sel_p['name']}</span> &nbsp;"
+                            f"<span style='color:#888;font-size:0.9rem'>({sel_p['size']})</span>",
+                            unsafe_allow_html=True
+                        )
+                        if top_right.button("🔄 Change Product", use_container_width=True, key="change_prod_btn"):
+                            st.session_state["selected_restock_id"] = None
+                            st.rerun()
 
                 if selected_id_upd:
                     prod = get_product_by_id(selected_id_upd)
