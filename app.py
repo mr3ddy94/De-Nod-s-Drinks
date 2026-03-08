@@ -40,7 +40,7 @@ st.set_page_config(
     page_title="De-Nod's Drinks Manager",
     page_icon="🍺",
     layout="wide",
-    initial_sidebar_state="collapsed"
+    initial_sidebar_state="auto"
 )
 
 # ── Elder-Friendly CSS ────────────────────────────────────────────────────────
@@ -54,10 +54,10 @@ st.markdown("""
 
 st.markdown("""
 <style>
-  @import url('https://fonts.googleapis.com/css2?family=Nunito:wght@400;600;700;800;900&display=swap');
+  /* No external font imports — fully offline compatible */
 
   html, body, [class*="css"] {
-      font-family: 'Nunito', sans-serif !important;
+      font-family: 'Segoe UI', 'Ubuntu', 'Helvetica Neue', Arial, sans-serif !important;
   }
 
   /* Big readable text throughout */
@@ -191,8 +191,13 @@ st.markdown("""
 
 # ── Database ───────────────────────────────────────────────────────────────────
 def get_db():
-    conn = sqlite3.connect(DB_PATH)
+    conn = sqlite3.connect(DB_PATH, timeout=10)
     conn.row_factory = sqlite3.Row
+    # WAL mode: much faster writes, no blocking, safe for offline use
+    conn.execute("PRAGMA journal_mode=WAL")
+    conn.execute("PRAGMA synchronous=NORMAL")   # faster than FULL, still crash-safe
+    conn.execute("PRAGMA cache_size=-8000")      # 8 MB page cache in memory
+    conn.execute("PRAGMA temp_store=MEMORY")     # temp tables in RAM not disk
     return conn
 
 
@@ -243,6 +248,11 @@ def _run_migrations(c):
             c.execute("UPDATE users SET permissions=? WHERE id=?",
                       (json.dumps(DEFAULT_STAFF_PERMISSIONS), uid))
     c.execute("INSERT OR IGNORE INTO settings VALUES (?,?)", ("revenue_reset_date", ""))
+    # Indexes for faster offline search
+    c.execute("CREATE INDEX IF NOT EXISTS idx_products_name ON products(name)")
+    c.execute("CREATE INDEX IF NOT EXISTS idx_products_active ON products(active)")
+    c.execute("CREATE INDEX IF NOT EXISTS idx_sales_date ON sales(sale_date)")
+    c.execute("CREATE INDEX IF NOT EXISTS idx_damage_date ON damaged_goods(date_logged)")
     c.execute("""CREATE TABLE IF NOT EXISTS audit_log (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         log_time TEXT,
@@ -669,7 +679,7 @@ def _seed_products(c):
     )
 
 # ── Helper Functions ───────────────────────────────────────────────────────────
-@st.cache_data(ttl=30, show_spinner=False)
+@st.cache_data(ttl=300, show_spinner=False)
 def search_products(query):
     conn = get_db()
     q = f"%{query.lower()}%"
@@ -681,7 +691,7 @@ def search_products(query):
     return [dict(r) for r in rows]
 
 
-@st.cache_data(ttl=30, show_spinner=False)
+@st.cache_data(ttl=300, show_spinner=False)
 def get_all_products():
     conn = get_db()
     rows = conn.execute("SELECT * FROM products WHERE active=1 ORDER BY category, name, size").fetchall()
@@ -703,7 +713,7 @@ def update_stock(pid, delta):
     conn.close()
 
 
-@st.cache_data(ttl=30, show_spinner=False)
+@st.cache_data(ttl=300, show_spinner=False)
 def get_low_stock_products():
     conn = get_db()
     rows = conn.execute(
@@ -751,7 +761,7 @@ def log_damage(product_id, product_name, size, qty, reason, unit_cost):
         update_stock(product_id, -qty)
 
 
-@st.cache_data(ttl=30, show_spinner=False)
+@st.cache_data(ttl=300, show_spinner=False)
 def get_sales_in_range(start_date, end_date):
     conn = get_db()
     rows = conn.execute(
@@ -762,7 +772,7 @@ def get_sales_in_range(start_date, end_date):
     return [dict(r) for r in rows]
 
 
-@st.cache_data(ttl=30, show_spinner=False)
+@st.cache_data(ttl=300, show_spinner=False)
 def get_damaged_in_range(start_date, end_date):
     conn = get_db()
     rows = conn.execute(
@@ -1224,7 +1234,7 @@ if _page == '🛒  New Sale':
             key="sale_search"
         )
 
-        if search_query and len(search_query) >= 1:
+        if search_query and len(search_query) >= 2:
             results = search_products(search_query)
             if results:
                 st.markdown(f"**{len(results)} result(s) found:**")
