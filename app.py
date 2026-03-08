@@ -7,12 +7,34 @@ import streamlit as st
 import sqlite3
 import json
 import os
+import re
+import html as _html
 from datetime import datetime, date, timedelta
 import pandas as pd
 import uuid
 
 # ── Config ────────────────────────────────────────────────────────────────────
 DB_PATH = "denods.db"
+
+# ── VAT constants (Ghana VAT Act 2025, effective 1 Jan 2026) ─────────────────
+VAT_RATE      = 0.15   # 15%
+NHIL_RATE     = 0.025  # 2.5%
+GETFUND_RATE  = 0.025  # 2.5%
+TOTAL_TAX_RATE = VAT_RATE + NHIL_RATE + GETFUND_RATE  # 20%
+
+# ── Security helpers ──────────────────────────────────────────────────────────
+SESSION_TIMEOUT_MINS = 60  # auto-logout after 60 minutes of inactivity
+
+def sanitize(text, max_len=500):
+    """Strip HTML tags and limit length for safe display."""
+    if not isinstance(text, str):
+        text = str(text)
+    text = _html.escape(text.strip())
+    return text[:max_len]
+
+def sanitize_pin(pin):
+    """Only digits, 4-6 chars."""
+    return re.sub(r'[^0-9]', '', str(pin).strip())[:6]
 
 st.set_page_config(
     page_title="De-Nod's Drinks Manager",
@@ -22,6 +44,14 @@ st.set_page_config(
 )
 
 # ── Elder-Friendly CSS ────────────────────────────────────────────────────────
+# ── Security headers injected via Streamlit meta (best available in Streamlit) ─
+st.markdown("""
+<meta http-equiv="X-Content-Type-Options" content="nosniff">
+<meta http-equiv="X-Frame-Options" content="DENY">
+<meta http-equiv="Referrer-Policy" content="strict-origin-when-cross-origin">
+<meta name="robots" content="noindex,nofollow">
+""", unsafe_allow_html=True)
+
 st.markdown("""
 <style>
   @import url('https://fonts.googleapis.com/css2?family=Nunito:wght@400;600;700;800;900&display=swap');
@@ -207,6 +237,13 @@ def _run_migrations(c):
             c.execute("UPDATE users SET permissions=? WHERE id=?",
                       (json.dumps(DEFAULT_STAFF_PERMISSIONS), uid))
     c.execute("INSERT OR IGNORE INTO settings VALUES (?,?)", ("revenue_reset_date", ""))
+    c.execute("""CREATE TABLE IF NOT EXISTS audit_log (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        log_time TEXT,
+        user_name TEXT,
+        action TEXT,
+        detail TEXT
+    )""")
 
 
 def init_db():
@@ -351,6 +388,22 @@ def has_perm(perm_key):
     if st.session_state.get("is_admin", False):
         return True
     return st.session_state.get("permissions", {}).get(perm_key, False)
+
+
+def audit(action, detail=""):
+    """Write a timestamped audit entry for the currently logged-in user."""
+    try:
+        conn = get_db()
+        conn.execute(
+            "INSERT INTO audit_log (log_time, user_name, action, detail) VALUES (?,?,?,?)",
+            (datetime.now().isoformat(timespec='seconds'),
+             st.session_state.get("logged_in_user", "unknown"),
+             sanitize(action, 100), sanitize(detail, 300))
+        )
+        conn.commit()
+        conn.close()
+    except Exception:
+        pass  # Never crash the app because of logging
 
 
 def sync_new_products():
@@ -737,6 +790,12 @@ def generate_receipt_html(receipt_no, items, subtotal, amount_paid, change_given
     customer_line = f"<div class='meta-row'><span>Customer:</span><span>{customer_name}</span></div>" if customer_name else ""
     auto_print_js = "window.onload = function(){ setTimeout(function(){ window.print(); }, 400); };" if auto_print else ""
 
+    # ── VAT breakdown (prices are VAT-inclusive at 20%) ──
+    pre_tax     = subtotal / (1 + TOTAL_TAX_RATE)
+    vat_amt     = pre_tax * VAT_RATE
+    nhil_amt    = pre_tax * NHIL_RATE
+    getfund_amt = pre_tax * GETFUND_RATE
+
     # Dashed separator helper
     sep = "-" * 42
 
@@ -872,8 +931,24 @@ def generate_receipt_html(receipt_no, items, subtotal, amount_paid, change_given
   </table>
 
   <div class="totals">
+    <div class="total-row" style="font-size:10px;">
+      <span>Sub-total (excl. tax)</span>
+      <span>{currency} {pre_tax:.2f}</span>
+    </div>
+    <div class="total-row" style="font-size:10px;">
+      <span>VAT (15%)</span>
+      <span>{currency} {vat_amt:.2f}</span>
+    </div>
+    <div class="total-row" style="font-size:10px;">
+      <span>NHIL (2.5%)</span>
+      <span>{currency} {nhil_amt:.2f}</span>
+    </div>
+    <div class="total-row" style="font-size:10px;">
+      <span>GETFund (2.5%)</span>
+      <span>{currency} {getfund_amt:.2f}</span>
+    </div>
     <div class="total-row grand">
-      <span>TOTAL</span>
+      <span>TOTAL (incl. 20% tax)</span>
       <span>{currency} {subtotal:.2f}</span>
     </div>
     <div class="total-row">
@@ -890,7 +965,8 @@ def generate_receipt_html(receipt_no, items, subtotal, amount_paid, change_given
 
   <div class="ftr">
     <div>{footer}</div>
-    <div style="margin-top:1mm;font-size:9px;">Printed: {now.strftime("%d/%m/%Y %H:%M:%S")}</div>
+    <div style="font-size:9px;margin-top:1.5mm;border-top:1px solid #bbb;padding-top:1mm;">VAT Reg: Prices incl. VAT 15% + NHIL 2.5% + GETFund 2.5% = 20%</div>
+    <div style="margin-top:0.5mm;font-size:9px;">Printed: {now.strftime("%d/%m/%Y %H:%M:%S")}</div>
   </div>
 
   <button class="print-btn" onclick="window.print()">🖨️  PRINT RECEIPT</button>
@@ -917,6 +993,10 @@ if 'is_admin' not in st.session_state:
     st.session_state.is_admin = False
 if 'permissions' not in st.session_state:
     st.session_state.permissions = {}
+if 'last_activity' not in st.session_state:
+    st.session_state.last_activity = datetime.now()
+if 'restock_product_id' not in st.session_state:
+    st.session_state.restock_product_id = None
 # ── Brute-force protection ─────────────────────────────────────────────────────
 if 'pin_attempts' not in st.session_state:
     st.session_state.pin_attempts = 0       # wrong attempts this session
@@ -929,6 +1009,21 @@ LOCKOUT_MINS  = 10    # minutes to lock after MAX_ATTEMPTS
 
 # ── Init DB ────────────────────────────────────────────────────────────────────
 init_db()
+
+# ── Session timeout: auto-logout after SESSION_TIMEOUT_MINS of inactivity ─────
+if st.session_state.logged_in:
+    idle = (datetime.now() - st.session_state.last_activity).total_seconds() / 60
+    if idle > SESSION_TIMEOUT_MINS:
+        st.session_state.logged_in      = False
+        st.session_state.logged_in_user = ""
+        st.session_state.is_admin       = False
+        st.session_state.permissions    = {}
+        st.session_state.cart           = []
+        st.session_state.last_receipt   = None
+        st.info("⏱️ You were logged out after inactivity. Please sign in again.")
+        st.rerun()
+    else:
+        st.session_state.last_activity = datetime.now()
 
 # ══════════════════════════════════════════════════════════════════════════════
 #  PIN LOGIN GATE  —  nothing below renders until the user is authenticated
@@ -1005,7 +1100,7 @@ if not st.session_state.logged_in:
 
             if login_btn or (pin_input and len(pin_input) >= 4):
                 if pin_input:
-                    user = check_pin(pin_input)
+                    user = check_pin(sanitize_pin(pin_input))
                     if user:
                         st.session_state.logged_in      = True
                         st.session_state.logged_in_user = user["name"]
@@ -1013,6 +1108,8 @@ if not st.session_state.logged_in:
                         st.session_state.permissions    = user["permissions"]
                         st.session_state.pin_attempts   = 0
                         st.session_state.lockout_until  = None
+                        st.session_state.last_activity  = datetime.now()
+                        audit("LOGIN", f"Role: {user['role']}")
                         st.rerun()
                     else:
                         # ❌ Wrong PIN — increment counter
@@ -1159,7 +1256,8 @@ with tab_sale:
 
             st.markdown("---")
             st.markdown("**💵 Payment**")
-            customer_name = st.text_input("Customer Name (optional)", placeholder="e.g. Kofi Mensah", key="cust_name")
+            customer_name_raw = st.text_input("Customer Name (optional)", placeholder="e.g. Kofi Mensah", key="cust_name")
+            customer_name = sanitize(customer_name_raw, 100)
             amount_paid = st.number_input(f"Amount Paid ({currency})", min_value=0.0, value=float(round(subtotal)), step=1.0, key="amt_paid")
 
             change = amount_paid - subtotal
@@ -1181,8 +1279,11 @@ with tab_sale:
                         receipt_no, list(st.session_state.cart),
                         subtotal, amount_paid, max(0, change), customer_name
                     )
+                    audit("SALE_COMPLETE",
+                          f"Receipt #{receipt_no} — {currency} {subtotal:.2f}"
+                          + (f" — {customer_name}" if customer_name else ""))
                     st.session_state.cart = []
-                    st.session_state.print_now = True   # ← triggers auto-print
+                    st.session_state.print_now = True
                     st.rerun()
 
             if col_b.button("🗑️ Clear Cart", use_container_width=True):
@@ -1237,12 +1338,21 @@ with tab_inv:
     with inv_tab1:
         st.markdown('<div class="section-title">📋 Current Inventory</div>', unsafe_allow_html=True)
 
-        # Low stock alert
+        # Low stock alert — each item is a clickable link to Update Stock
         low = get_low_stock_products()
         if low:
-            st.error(f"⚠️ **{len(low)} items are low on stock or out of stock!**")
+            st.error(f"⚠️ **{len(low)} item(s) are low on stock or out of stock!**")
             for item in low:
-                st.markdown(f'<div class="low-stock">🔴 {item["name"]} ({item["size"]}) — Only <strong>{item["stock_qty"]}</strong> left (Alert: ≤{item["low_stock_alert"]})</div>', unsafe_allow_html=True)
+                col_warn, col_btn = st.columns([5, 2])
+                stock_label = "OUT OF STOCK" if item["stock_qty"] <= 0 else f"Only {item['stock_qty']} left"
+                col_warn.markdown(
+                    f'<div class="low-stock">🔴 <strong>{item["name"]}</strong> ({item["size"]}) — {stock_label} (Alert: ≤{item["low_stock_alert"]})</div>',
+                    unsafe_allow_html=True
+                )
+                if col_btn.button(f"➕ Restock", key=f"goto_restock_{item['id']}",
+                                  use_container_width=True, type="primary"):
+                    st.session_state.restock_product_id = item["id"]
+                    st.rerun()
             st.markdown("---")
 
         all_prods = get_all_products()
@@ -1308,7 +1418,7 @@ with tab_inv:
                     conn = get_db()
                     conn.execute(
                         "INSERT INTO products (name, category, size, buy_price, sell_price, stock_qty, low_stock_alert) VALUES (?,?,?,?,?,?,?)",
-                        (prod_name.strip(), prod_cat, prod_size.strip(), 0, prod_sell, prod_stock, prod_alert)
+                        (sanitize(prod_name, 100), prod_cat, sanitize(prod_size, 100), 0, prod_sell, prod_stock, prod_alert)
                     )
                     conn.commit()
                     conn.close()
@@ -1321,62 +1431,156 @@ with tab_inv:
         if not has_perm("can_view_inventory"):
             st.warning("🚫 You do not have permission to update stock.")
         else:
-            st.markdown('<div class="section-title">✏️ Update Existing Product</div>', unsafe_allow_html=True)
+            st.markdown('<div class="section-title">✏️ Restock & Update Products</div>', unsafe_allow_html=True)
 
-        all_prods = get_all_products()
-        if all_prods:
-            prod_options = {f"{p['name']} ({p['size']}) — Stock: {p['stock_qty']}": p['id'] for p in all_prods}
-            selected_label = st.selectbox("Select Product to Update", list(prod_options.keys()), key="update_prod_sel")
-            selected_id = prod_options[selected_label]
-            prod = get_product_by_id(selected_id)
+            all_prods_upd = get_all_products()
+            if not all_prods_upd:
+                st.info("No products yet. Add some in the ➕ Add Product tab.")
+            else:
+                # ── Smart search: type to filter, click to select ──────────────
+                st.markdown("**🔍 Search for a product to update:**")
+                search_text = st.text_input(
+                    "Type product name or size...",
+                    placeholder="e.g. Club Beer, Kalyppo, 500ml...",
+                    key="restock_search",
+                    value=""
+                )
 
-            if prod:
-                with st.form("update_product_form"):
-                    c1, c2 = st.columns(2)
-                    new_name = c1.text_input("Name", value=prod['name'])
-                    new_cat = c2.selectbox("Category", [
-                        "Beer", "Malt Drink", "Soft Drink", "Water", "Spirit", "Whisky",
-                        "Wine", "Energy Drink", "Juice", "Dairy Drink", "Local Drink", "Other"
-                    ], index=["Beer","Malt Drink","Soft Drink","Water","Spirit","Whisky","Wine","Energy Drink","Juice","Dairy Drink","Local Drink","Other"].index(prod['category']) if prod['category'] in ["Beer","Malt Drink","Soft Drink","Water","Spirit","Whisky","Wine","Energy Drink","Juice","Dairy Drink","Local Drink","Other"] else 0)
-                    c3, c4 = st.columns(2)
-                    new_size = c3.text_input("Size", value=prod['size'])
-                    new_alert = c4.number_input("Low Stock Alert", min_value=1, value=prod['low_stock_alert'])
-                    c5, c6 = st.columns(2)
-                    new_sell = c5.number_input(f"Wholesale Price ({currency})", min_value=0.0, value=float(prod['sell_price']), step=0.5)
-                    new_stock = c6.number_input("Stock Quantity", min_value=0, value=int(prod['stock_qty']))
+                # If arriving from a low-stock notification, pre-select that product
+                arriving_id = st.session_state.get("restock_product_id")
 
-                    col_save, col_del = st.columns(2)
-                    save = col_save.form_submit_button("💾 Save Changes", use_container_width=True, type="primary")
-                    delete = col_del.form_submit_button("🗑️ Deactivate Product", use_container_width=True)
+                # Filter products by search text
+                if search_text.strip():
+                    q = search_text.strip().lower()
+                    filtered_prods = [p for p in all_prods_upd
+                                      if q in p['name'].lower() or q in p['size'].lower()
+                                      or q in p['category'].lower()]
+                else:
+                    filtered_prods = all_prods_upd
 
-                    if save:
-                        conn = get_db()
-                        conn.execute(
-                            "UPDATE products SET name=?, category=?, size=?, sell_price=?, stock_qty=?, low_stock_alert=? WHERE id=?",
-                            (new_name, new_cat, new_size, new_sell, new_stock, new_alert, selected_id)
+                if not filtered_prods:
+                    st.warning("No products match that search.")
+                    selected_id_upd = None
+                else:
+                    # Build option labels with stock level indicators
+                    def stock_icon(p):
+                        if p['stock_qty'] <= 0:          return "🔴"
+                        if p['stock_qty'] <= p['low_stock_alert']: return "🟡"
+                        return "🟢"
+
+                    option_labels = [
+                        f"{stock_icon(p)}  {p['name']}  ({p['size']})"
+                        f"  —  Stock: {p['stock_qty']}"
+                        for p in filtered_prods
+                    ]
+                    id_map = {label: p['id'] for label, p in zip(option_labels, filtered_prods)}
+
+                    # If arriving from restock notification, pre-select that item
+                    default_idx = 0
+                    if arriving_id:
+                        for i, p in enumerate(filtered_prods):
+                            if p['id'] == arriving_id:
+                                default_idx = i
+                                break
+                        st.session_state.restock_product_id = None  # consumed
+
+                    selected_label_upd = st.selectbox(
+                        f"{len(filtered_prods)} product(s) found — select one:",
+                        option_labels,
+                        index=default_idx,
+                        key="update_prod_sel"
+                    )
+                    selected_id_upd = id_map[selected_label_upd]
+
+                if selected_id_upd:
+                    prod = get_product_by_id(selected_id_upd)
+                    if prod:
+                        # ── Prominent stock status banner ─────────────────────
+                        stock_status_color = "#e53935" if prod['stock_qty'] <= 0 else                                              "#f57c00" if prod['stock_qty'] <= prod['low_stock_alert'] else "#2e7d32"
+                        st.markdown(
+                            f'''<div style="background:{stock_status_color};color:white;padding:12px 18px;
+                            border-radius:10px;margin:10px 0;font-size:1.1rem;font-weight:bold;">
+                            📦 Current Stock: {prod['stock_qty']} units
+                            {"  ⚠️ LOW STOCK" if prod['stock_qty'] <= prod['low_stock_alert'] and prod['stock_qty'] > 0 else "  🚫 OUT OF STOCK" if prod['stock_qty'] <= 0 else "  ✅ OK"}
+                            </div>''', unsafe_allow_html=True
                         )
-                        conn.commit()
-                        conn.close()
-                        st.success("✅ Product updated!")
-                        st.rerun()
 
-                    if delete:
-                        conn = get_db()
-                        conn.execute("UPDATE products SET active=0 WHERE id=?", (selected_id,))
-                        conn.commit()
-                        conn.close()
-                        st.success("Product deactivated.")
-                        st.rerun()
+                        # ── ⚡ Quick Top-Up (most common action) ──────────────
+                        st.markdown("**⚡ Quick Top-Up**")
+                        qa, qb, qc = st.columns([2, 2, 2])
+                        topup_qty = qa.number_input("Units to Add", min_value=1, value=24, key="topup_qty_new")
+                        topup_note = qb.text_input("Delivery / Supplier Note (optional)", key="topup_note",
+                                                   placeholder="e.g. Delivered by Kofi, Inv#123")
+                        qa2, qb2 = st.columns(2)
+                        if qa2.button("➕ Add to Stock", use_container_width=True, type="primary", key="quick_topup_btn"):
+                            update_stock(selected_id_upd, topup_qty)
+                            audit("STOCK_TOPUP",
+                                  f"{prod['name']} ({prod['size']}) +{topup_qty} — {topup_note}")
+                            st.success(f"✅ Added {topup_qty} units to {prod['name']}. New stock: {prod['stock_qty'] + topup_qty}")
+                            st.rerun()
+                        if qb2.button("🔄 Set Exact Stock Count", use_container_width=True, key="set_exact_btn"):
+                            st.session_state[f"show_exact_{selected_id_upd}"] = True
 
-                # Quick stock top-up
-                st.markdown("**⚡ Quick Stock Top-Up**")
-                col_a, col_b = st.columns([2, 1])
-                add_qty = col_a.number_input("Add Units to Stock", min_value=1, value=24, key="topup_qty")
-                if col_b.button("➕ Add Stock", use_container_width=True, type="primary"):
-                    update_stock(selected_id, add_qty)
-                    st.success(f"✅ Added {add_qty} units to {prod['name']} ({prod['size']})")
-                    st.rerun()
+                        if st.session_state.get(f"show_exact_{selected_id_upd}"):
+                            exact_val = st.number_input("Set stock to exactly:", min_value=0,
+                                                        value=int(prod['stock_qty']), key="exact_stock_val")
+                            if st.button("✅ Confirm Exact Count", key="confirm_exact"):
+                                diff = exact_val - prod['stock_qty']
+                                update_stock(selected_id_upd, diff)
+                                audit("STOCK_SET",
+                                      f"{prod['name']} ({prod['size']}) set to {exact_val}")
+                                st.session_state[f"show_exact_{selected_id_upd}"] = False
+                                st.success(f"✅ Stock set to {exact_val} units.")
+                                st.rerun()
 
+                        st.markdown("---")
+                        # ── Full edit form (price, name, etc.) ────────────────
+                        with st.expander("✏️ Edit Product Details (name, price, size, alert level)", expanded=False):
+                            can_price = has_perm("can_change_price")
+                            with st.form("update_product_form"):
+                                c1, c2 = st.columns(2)
+                                new_name = c1.text_input("Name", value=prod['name'])
+                                cats = ["Beer","Malt Drink","Soft Drink","Water","Spirit","Whisky",
+                                        "Wine","Energy Drink","Juice","Dairy Drink","Local Drink","Other"]
+                                new_cat = c2.selectbox("Category", cats,
+                                    index=cats.index(prod['category']) if prod['category'] in cats else 0)
+                                c3, c4 = st.columns(2)
+                                new_size  = c3.text_input("Size", value=prod['size'])
+                                new_alert = c4.number_input("Low Stock Alert", min_value=1,
+                                                            value=prod['low_stock_alert'])
+                                c5, c6 = st.columns(2)
+                                new_sell  = c5.number_input(
+                                    f"Wholesale Price ({currency})" + ("" if can_price else " 🔒 Read-only"),
+                                    min_value=0.0, value=float(prod['sell_price']), step=0.5,
+                                    disabled=not can_price
+                                )
+                                new_stock_val = c6.number_input("Stock Quantity", min_value=0,
+                                                                value=int(prod['stock_qty']))
+                                col_save, col_del = st.columns(2)
+                                save_btn   = col_save.form_submit_button("💾 Save Changes",
+                                                use_container_width=True, type="primary")
+                                delete_btn = col_del.form_submit_button("🗑️ Deactivate Product",
+                                                use_container_width=True)
+                                if save_btn:
+                                    final_price = new_sell if can_price else prod['sell_price']
+                                    conn = get_db()
+                                    conn.execute(
+                                        "UPDATE products SET name=?, category=?, size=?, sell_price=?, stock_qty=?, low_stock_alert=? WHERE id=?",
+                                        (sanitize(new_name), new_cat, sanitize(new_size),
+                                         final_price, new_stock_val, new_alert, selected_id_upd)
+                                    )
+                                    conn.commit(); conn.close()
+                                    audit("PRODUCT_EDIT", f"{new_name} ({new_size})")
+                                    st.success("✅ Product updated!")
+                                    st.rerun()
+                                if delete_btn:
+                                    conn = get_db()
+                                    conn.execute("UPDATE products SET active=0 WHERE id=?",
+                                                 (selected_id_upd,))
+                                    conn.commit(); conn.close()
+                                    audit("PRODUCT_DEACTIVATE", f"{prod['name']} ({prod['size']})")
+                                    st.success("Product deactivated.")
+                                    st.rerun()
 
 # ═══════════════════════════════════════════════════════════════════════════════
 #  TAB 3: DAMAGED GOODS
@@ -1424,6 +1628,8 @@ with tab_damage:
                 if dmg_name:
                     log_damage(dmg_pid, dmg_name, dmg_size if 'dmg_size' in dir() else '', dmg_qty,
                                f"{dmg_reason}. {dmg_notes}".strip('. '), dmg_cost)
+                    audit("DAMAGE_LOG",
+                          f"{dmg_name} x{dmg_qty} — {dmg_reason} — Loss: {currency} {total_loss:.2f}")
                     st.success(f"✅ Logged {dmg_qty}x {dmg_name} as damaged. Loss: {currency} {total_loss:.2f}")
                     st.rerun()
                 else:
@@ -1672,6 +1878,23 @@ with tab_settings:
         st.markdown("---")
         st.markdown("**ℹ️ App Info**")
         st.info("De-Nod's Drinks Manager v1.0\nBuilt for De-Nod's Wholesale Drinks, Ghana.\nData stored locally in denods.db")
+
+        if st.session_state.is_admin:
+            st.markdown("---")
+            st.markdown("**🔍 Activity Audit Log** *(Admin only)*")
+            st.caption("Every sale, stock update, login, and change is recorded here.")
+            log_limit = st.selectbox("Show last:", [50, 100, 200, 500], key="audit_limit")
+            conn = get_db()
+            log_rows = conn.execute(
+                "SELECT log_time, user_name, action, detail FROM audit_log ORDER BY id DESC LIMIT ?",
+                (log_limit,)
+            ).fetchall()
+            conn.close()
+            if log_rows:
+                log_df = pd.DataFrame(log_rows, columns=["Time", "User", "Action", "Detail"])
+                st.dataframe(log_df, use_container_width=True, height=300)
+            else:
+                st.info("No activity recorded yet.")
 
 # ── User Management — Admin Only ───────────────────────────────────────────────
 with tab_settings:
