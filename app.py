@@ -1368,315 +1368,305 @@ if _page == '🛒  New Sale':
 # ═══════════════════════════════════════════════════════════════════════════════
 #  TAB 2: INVENTORY
 # ═══════════════════════════════════════════════════════════════════════════════
+#  TAB 2 – INVENTORY
+# ═══════════════════════════════════════════════════════════════════════════════
 if _page == '📦  Inventory':
     if not has_perm("can_view_inventory"):
         st.warning("🚫 You do not have permission to view inventory. Ask the administrator.")
     else:
-        INV_TABS = ["📋 View Stock", "➕ Add Product", "✏️ Update Stock"]
-        # If arriving from a restock link, jump straight to Update Stock
-        if st.session_state.get("restock_product_id"):
-            st.session_state.active_inv_tab = "✏️ Update Stock"
-        inv_cols = st.columns(len(INV_TABS))
-        for _i, _itab in enumerate(INV_TABS):
-            _active = st.session_state.active_inv_tab == _itab
-            if inv_cols[_i].button(_itab, key=f"invnav_{_itab}",
-                                   use_container_width=True,
-                                   type="primary" if _active else "secondary"):
-                st.session_state.active_inv_tab = _itab
-                st.rerun()
-        st.markdown("---")
-        _itab = st.session_state.active_inv_tab
+        inv_tab1, inv_tab2, inv_tab3 = st.tabs(
+            ["📋  View Stock", "➕  Add Product", "✏️  Update Stock"]
+        )
 
-    # ── View Stock ──
-    if _itab == '📋 View Stock':
-        st.markdown('<div class="section-title">📋 Current Inventory</div>', unsafe_allow_html=True)
+        # ── VIEW STOCK ────────────────────────────────────────────────────────
+        with inv_tab1:
+            st.markdown('<div class="section-title">📋 Current Inventory</div>', unsafe_allow_html=True)
 
-        # Low stock alert — each item is a clickable link to Update Stock
-        low = get_low_stock_products()
-        if low:
-            st.error(f"⚠️ **{len(low)} item(s) are low on stock or out of stock!**")
-            for item in low:
-                col_warn, col_btn = st.columns([5, 2])
-                stock_label = "OUT OF STOCK" if item["stock_qty"] <= 0 else f"Only {item['stock_qty']} left"
-                col_warn.markdown(
-                    f'<div class="low-stock">🔴 <strong>{item["name"]}</strong> ({item["size"]}) — {stock_label} (Alert: ≤{item["low_stock_alert"]})</div>',
-                    unsafe_allow_html=True
-                )
-                if col_btn.button(f"➕ Restock", key=f"goto_restock_{item['id']}",
-                                  use_container_width=True, type="primary"):
-                    st.session_state.restock_product_id = item["id"]
-                    st.session_state.active_page = "📦  Inventory"
-                    st.session_state.active_inv_tab = "✏️ Update Stock"
-                    st.rerun()
-            st.markdown("---")
+            low = get_low_stock_products()
+            all_prods = get_all_products()
 
-        all_prods = get_all_products()
-        if all_prods:
-            # Category filter
-            categories = ["All"] + sorted(list(set(p['category'] for p in all_prods)))
-            cat_filter = st.selectbox("Filter by Category", categories, key="inv_cat_filter")
+            if low:
+                st.error(f"⚠️ **{len(low)} item(s) low on stock or out of stock!**")
 
-            filtered = all_prods if cat_filter == "All" else [p for p in all_prods if p['category'] == cat_filter]
+                # If a restock panel is open, show it here (no tab-switch needed)
+                restock_id = st.session_state.get("restock_product_id")
 
-            # Build dataframe
-            df = pd.DataFrame(filtered)
-            df = df.rename(columns={
-                'name': 'Name', 'category': 'Category', 'size': 'Size',
-                'sell_price': f'Wholesale Price ({currency})',
-                'stock_qty': 'In Stock', 'low_stock_alert': 'Alert Level'
-            })
-            display_cols = ['Name', 'Category', 'Size', f'Wholesale Price ({currency})', 'In Stock', 'Alert Level']
-
-            # Highlight low stock
-            def highlight_low(row):
-                if row['In Stock'] <= row['Alert Level']:
-                    return ['background-color: #ffe0e0'] * len(row)
-                return [''] * len(row)
-
-            st.dataframe(
-                df[display_cols].style.apply(highlight_low, axis=1),
-                use_container_width=True,
-                height=500
-            )
-
-            # Summary
-            c1, c2, c3 = st.columns(3)
-            c1.metric("Total Products", len(all_prods))
-            total_value = sum(p['sell_price'] * p['stock_qty'] for p in all_prods)
-            c2.metric(f"Total Stock Value ({currency})", f"{total_value:,.0f}")
-            c3.metric("Low Stock Items", len(low))
-
-    # ── Add Product ──
-    if _itab == '➕ Add Product':
-        if not has_perm("can_add_product"):
-            st.warning("🚫 You do not have permission to add products.")
-        else:
-            st.markdown('<div class="section-title">➕ Add New Product</div>', unsafe_allow_html=True)
-        with st.form("add_product_form", clear_on_submit=True):
-            c1, c2 = st.columns(2)
-            prod_name = c1.text_input("Product Name *", placeholder="e.g. Guinness Stout")
-            prod_cat = c2.selectbox("Category *", [
-                "Beer", "Malt Drink", "Soft Drink", "Water", "Spirit", "Whisky",
-                "Wine", "Energy Drink", "Juice", "Dairy Drink", "Local Drink", "Other"
-            ])
-            c3, c4 = st.columns(2)
-            prod_size = c3.text_input("Size *", placeholder="e.g. 330ml Bottle")
-            prod_alert = c4.number_input("Low Stock Alert (units)", min_value=1, value=12)
-
-            c5, c6 = st.columns(2)
-            prod_sell = c5.number_input(f"Wholesale Price ({currency})", min_value=0.0, value=0.0, step=0.5)
-            prod_stock = c6.number_input("Opening Stock (units)", min_value=0, value=0)
-
-            submitted = st.form_submit_button("✅ Add Product", use_container_width=True, type="primary")
-            if submitted:
-                if prod_name and prod_size:
-                    conn = get_db()
-                    conn.execute(
-                        "INSERT INTO products (name, category, size, buy_price, sell_price, stock_qty, low_stock_alert) VALUES (?,?,?,?,?,?,?)",
-                        (sanitize(prod_name, 100), prod_cat, sanitize(prod_size, 100), 0, prod_sell, prod_stock, prod_alert)
+                for item in low:
+                    col_warn, col_btn = st.columns([5, 2])
+                    stock_label = "OUT OF STOCK" if item["stock_qty"] <= 0 else f"Only {item['stock_qty']} left"
+                    col_warn.markdown(
+                        f'<div class="low-stock">🔴 <strong>{item["name"]}</strong> ({item["size"]}) — {stock_label} (Alert: ≤{item["low_stock_alert"]})</div>',
+                        unsafe_allow_html=True
                     )
-                    conn.commit()
-                    conn.close()
-                    get_all_products.clear()
-                    get_low_stock_products.clear()
-                    st.success(f"✅ '{prod_name} ({prod_size})' added successfully!")
-                else:
-                    st.error("Please fill in Product Name and Size.")
+                    if col_btn.button("➕ Restock", key=f"goto_restock_{item['id']}",
+                                      use_container_width=True, type="primary"):
+                        # Toggle: click again to close
+                        if st.session_state.get("restock_product_id") == item["id"]:
+                            st.session_state.restock_product_id = None
+                        else:
+                            st.session_state.restock_product_id = item["id"]
+                        st.rerun()
 
-    # ── Update Stock ──
-    if _itab == '✏️ Update Stock':
-        if not has_perm("can_view_inventory"):
-            st.warning("🚫 You do not have permission to update stock.")
-        else:
-            st.markdown('<div class="section-title">✏️ Restock & Update Products</div>', unsafe_allow_html=True)
+                    # ── Inline restock panel ──────────────────────────────────
+                    if st.session_state.get("restock_product_id") == item["id"]:
+                        with st.container():
+                            st.markdown(
+                                f'''<div style="background:#e8f5e9;border:2px solid #2e7d32;
+                                border-radius:10px;padding:14px 18px;margin:6px 0 12px 0;">
+                                <strong>📦 Restocking: {item["name"]} ({item["size"]})</strong>
+                                </div>''', unsafe_allow_html=True
+                            )
+                            rc1, rc2 = st.columns([2, 3])
+                            topup_qty = rc1.number_input(
+                                "Units to add", min_value=1, value=24,
+                                key=f"inline_topup_qty_{item['id']}"
+                            )
+                            topup_note = rc2.text_input(
+                                "Supplier / delivery note (optional)",
+                                key=f"inline_topup_note_{item['id']}",
+                                placeholder="e.g. Delivered by Kofi"
+                            )
+                            rb1, rb2 = st.columns(2)
+                            if rb1.button("✅ Add to Stock", key=f"inline_add_{item['id']}",
+                                          use_container_width=True, type="primary"):
+                                update_stock(item["id"], topup_qty)
+                                audit("STOCK_TOPUP",
+                                      f"{item['name']} ({item['size']}) +{topup_qty} — {topup_note}")
+                                st.session_state.restock_product_id = None
+                                st.success(f"✅ Added {topup_qty} units to {item['name']}. "
+                                           f"New stock: {item['stock_qty'] + topup_qty}")
+                                st.rerun()
+                            if rb2.button("✖ Cancel", key=f"inline_cancel_{item['id']}",
+                                         use_container_width=True):
+                                st.session_state.restock_product_id = None
+                                st.rerun()
 
-            all_prods_upd = get_all_products()
-            if not all_prods_upd:
-                st.info("No products yet. Add some in the ➕ Add Product tab.")
-            else:
-                # ── Smart search → product cards ──────────────────────────
-                # If arriving from a low-stock notification, jump straight to that product
-                arriving_id = st.session_state.get("restock_product_id")
-                if arriving_id:
-                    st.session_state["selected_restock_id"] = arriving_id
-                    st.session_state.restock_product_id = None
+                st.markdown("---")
 
-                if "selected_restock_id" not in st.session_state:
-                    st.session_state["selected_restock_id"] = None
+            if all_prods:
+                categories = ["All"] + sorted(list(set(p['category'] for p in all_prods)))
+                cat_filter = st.selectbox("Filter by Category", categories, key="inv_cat_filter")
+                filtered = all_prods if cat_filter == "All" else [p for p in all_prods if p['category'] == cat_filter]
 
-                # Search bar
-                st.markdown("**🔍 Search product to restock:**")
-                search_text = st.text_input(
-                    "search_restock_label",
-                    placeholder="Type name, size or category — e.g. Club Beer, 500ml, Water...",
-                    key="restock_search",
-                    label_visibility="collapsed"
+                df = pd.DataFrame(filtered)
+                df = df.rename(columns={
+                    'name': 'Name', 'category': 'Category', 'size': 'Size',
+                    'sell_price': f'Wholesale Price ({currency})',
+                    'stock_qty': 'In Stock', 'low_stock_alert': 'Alert Level'
+                })
+                display_cols = ['Name', 'Category', 'Size', f'Wholesale Price ({currency})', 'In Stock', 'Alert Level']
+
+                def highlight_low(row):
+                    if row['In Stock'] <= row['Alert Level']:
+                        return ['background-color: #ffe0e0'] * len(row)
+                    return [''] * len(row)
+
+                st.dataframe(
+                    df[display_cols].style.apply(highlight_low, axis=1),
+                    use_container_width=True, height=500
                 )
 
-                # Filter
-                if search_text.strip():
-                    q = search_text.strip().lower()
-                    filtered_prods = [p for p in all_prods_upd
-                                      if q in p['name'].lower() or q in p['size'].lower()
-                                      or q in p['category'].lower()]
-                    show_list = True
+                c1, c2, c3 = st.columns(3)
+                c1.metric("Total Products", len(all_prods))
+                total_value = sum(p['sell_price'] * p['stock_qty'] for p in all_prods)
+                c2.metric(f"Total Stock Value ({currency})", f"{total_value:,.0f}")
+                c3.metric("Low Stock Items", len(low))
+            else:
+                st.info("No products yet. Add some in the ➕ Add Product tab.")
+
+        # ── ADD PRODUCT ───────────────────────────────────────────────────────
+        with inv_tab2:
+            if not has_perm("can_add_product"):
+                st.warning("🚫 You do not have permission to add products.")
+            else:
+                st.markdown('<div class="section-title">➕ Add New Product</div>', unsafe_allow_html=True)
+                with st.form("add_product_form", clear_on_submit=True):
+                    c1, c2 = st.columns(2)
+                    prod_name = c1.text_input("Product Name *", placeholder="e.g. Guinness Stout")
+                    prod_cat  = c2.selectbox("Category *", [
+                        "Beer","Malt Drink","Soft Drink","Water","Spirit","Whisky",
+                        "Wine","Energy Drink","Juice","Dairy Drink","Local Drink","Other"
+                    ])
+                    c3, c4 = st.columns(2)
+                    prod_size  = c3.text_input("Size *", placeholder="e.g. 330ml Bottle")
+                    prod_alert = c4.number_input("Low Stock Alert (units)", min_value=1, value=12)
+                    c5, c6 = st.columns(2)
+                    prod_sell  = c5.number_input(f"Wholesale Price ({currency})", min_value=0.0, value=0.0, step=0.5)
+                    prod_stock = c6.number_input("Opening Stock (units)", min_value=0, value=0)
+                    if st.form_submit_button("✅ Add Product", use_container_width=True, type="primary"):
+                        if prod_name and prod_size:
+                            conn = get_db()
+                            conn.execute(
+                                "INSERT INTO products (name,category,size,buy_price,sell_price,stock_qty,low_stock_alert) VALUES (?,?,?,?,?,?,?)",
+                                (sanitize(prod_name,100), prod_cat, sanitize(prod_size,100), 0, prod_sell, prod_stock, prod_alert)
+                            )
+                            conn.commit(); conn.close()
+                            get_all_products.clear(); get_low_stock_products.clear()
+                            st.success(f"✅ '{prod_name} ({prod_size})' added!")
+                        else:
+                            st.error("Please fill in Product Name and Size.")
+
+        # ── UPDATE STOCK ──────────────────────────────────────────────────────
+        with inv_tab3:
+            if not has_perm("can_view_inventory"):
+                st.warning("🚫 You do not have permission to update stock.")
+            else:
+                st.markdown('<div class="section-title">✏️ Restock & Update Products</div>', unsafe_allow_html=True)
+
+                all_prods_upd = get_all_products()
+                if not all_prods_upd:
+                    st.info("No products yet.")
                 else:
-                    filtered_prods = []
-                    show_list = False
+                    if "selected_restock_id" not in st.session_state:
+                        st.session_state["selected_restock_id"] = None
 
-                # Show matching product cards (max 12 at a time)
-                if show_list:
-                    if not filtered_prods:
-                        st.warning("No products match — try a different search term.")
-                    else:
-                        st.caption(f"{len(filtered_prods)} match(es) — click a product to select it:")
-                        for p in filtered_prods[:12]:
-                            if p['stock_qty'] <= 0:
-                                badge_color = "#c62828"; badge_text = "OUT OF STOCK"
-                            elif p['stock_qty'] <= p['low_stock_alert']:
-                                badge_color = "#e65100"; badge_text = f"LOW  {p['stock_qty']} left"
-                            else:
-                                badge_color = "#2e7d32"; badge_text = f"✅  {p['stock_qty']} in stock"
+                    # Search bar
+                    st.markdown("**🔍 Search product to restock:**")
+                    search_text = st.text_input(
+                        "search_label", label_visibility="collapsed",
+                        placeholder="Type name, size or category — e.g. Club Beer, 500ml, Water...",
+                        key="restock_search"
+                    )
 
-                            card_html = f"""
-                            <div style="
-                                border:2px solid {'#c62828' if p['stock_qty']<=0 else '#e65100' if p['stock_qty']<=p['low_stock_alert'] else '#e0e0e0'};
-                                border-radius:10px;padding:10px 14px;margin-bottom:6px;
-                                background:{'#fff3f3' if p['stock_qty']<=0 else '#fff8f0' if p['stock_qty']<=p['low_stock_alert'] else '#f9f9f9'};
-                                display:flex;justify-content:space-between;align-items:center;">
-                              <div>
-                                <div style="font-size:1rem;font-weight:700;color:#1a2035;">{p['name']}</div>
-                                <div style="font-size:0.82rem;color:#666;margin-top:2px;">{p['size']} &nbsp;·&nbsp; {p['category']}</div>
-                              </div>
-                              <div style="background:{badge_color};color:white;padding:4px 10px;
-                                          border-radius:20px;font-size:0.78rem;font-weight:700;white-space:nowrap;">
-                                {badge_text}
-                              </div>
-                            </div>"""
-                            st.markdown(card_html, unsafe_allow_html=True)
-                            if st.button(f"Select  →  {p['name']} ({p['size']})",
-                                         key=f"sel_prod_{p['id']}",
-                                         use_container_width=True):
-                                st.session_state["selected_restock_id"] = p['id']
-                                st.rerun()
-                        if len(filtered_prods) > 12:
-                            st.caption(f"Showing first 12 of {len(filtered_prods)} — refine your search to narrow down.")
+                    if search_text.strip():
+                        q = search_text.strip().lower()
+                        filtered_prods = [p for p in all_prods_upd
+                                          if q in p['name'].lower() or q in p['size'].lower()
+                                          or q in p['category'].lower()]
+                        if not filtered_prods:
+                            st.warning("No products match — try a different search term.")
+                        else:
+                            st.caption(f"{len(filtered_prods)} match(es) — click a product to select it:")
+                            for p in filtered_prods[:12]:
+                                if p['stock_qty'] <= 0:
+                                    bc = "#c62828"; bt = "OUT OF STOCK"; bg = "#fff3f3"; bdr = "#c62828"
+                                elif p['stock_qty'] <= p['low_stock_alert']:
+                                    bc = "#e65100"; bt = f"LOW — {p['stock_qty']} left"; bg = "#fff8f0"; bdr = "#e65100"
+                                else:
+                                    bc = "#2e7d32"; bt = f"✅ {p['stock_qty']} in stock"; bg = "#f9f9f9"; bdr = "#e0e0e0"
 
-                # Show the selected product panel
-                selected_id_upd = st.session_state.get("selected_restock_id")
-                if selected_id_upd:
-                    # Show a clear "currently editing" header with a change button
-                    sel_p = next((p for p in all_prods_upd if p['id'] == selected_id_upd), None)
-                    if sel_p:
-                        st.markdown("---")
-                        top_left, top_right = st.columns([5, 2])
-                        top_left.markdown(
-                            f"**Editing:** &nbsp; <span style='font-size:1.1rem;font-weight:800;"
-                            f"color:#1a2035'>{sel_p['name']}</span> &nbsp;"
-                            f"<span style='color:#888;font-size:0.9rem'>({sel_p['size']})</span>",
-                            unsafe_allow_html=True
-                        )
-                        if top_right.button("🔄 Change Product", use_container_width=True, key="change_prod_btn"):
-                            st.session_state["selected_restock_id"] = None
-                            st.rerun()
+                                st.markdown(f"""
+                                <div style="border:2px solid {bdr};border-radius:10px;padding:10px 14px;
+                                margin-bottom:4px;background:{bg};display:flex;
+                                justify-content:space-between;align-items:center;">
+                                  <div>
+                                    <div style="font-size:1rem;font-weight:700;color:#1a2035;">{p['name']}</div>
+                                    <div style="font-size:0.82rem;color:#666;margin-top:2px;">{p['size']} &nbsp;·&nbsp; {p['category']}</div>
+                                  </div>
+                                  <div style="background:{bc};color:white;padding:4px 10px;
+                                              border-radius:20px;font-size:0.78rem;font-weight:700;white-space:nowrap;">
+                                    {bt}
+                                  </div>
+                                </div>""", unsafe_allow_html=True)
 
-                if selected_id_upd:
-                    prod = get_product_by_id(selected_id_upd)
-                    if prod:
-                        # ── Prominent stock status banner ─────────────────────
-                        stock_status_color = "#e53935" if prod['stock_qty'] <= 0 else                                              "#f57c00" if prod['stock_qty'] <= prod['low_stock_alert'] else "#2e7d32"
-                        st.markdown(
-                            f'''<div style="background:{stock_status_color};color:white;padding:12px 18px;
-                            border-radius:10px;margin:10px 0;font-size:1.1rem;font-weight:bold;">
-                            📦 Current Stock: {prod['stock_qty']} units
-                            {"  ⚠️ LOW STOCK" if prod['stock_qty'] <= prod['low_stock_alert'] and prod['stock_qty'] > 0 else "  🚫 OUT OF STOCK" if prod['stock_qty'] <= 0 else "  ✅ OK"}
-                            </div>''', unsafe_allow_html=True
-                        )
+                                if st.button(f"Select  ›  {p['name']} ({p['size']})",
+                                             key=f"sel_prod_{p['id']}",
+                                             use_container_width=True):
+                                    st.session_state["selected_restock_id"] = p['id']
+                                    st.rerun()
 
-                        # ── ⚡ Quick Top-Up (most common action) ──────────────
-                        st.markdown("**⚡ Quick Top-Up**")
-                        qa, qb, qc = st.columns([2, 2, 2])
-                        topup_qty = qa.number_input("Units to Add", min_value=1, value=24, key="topup_qty_new")
-                        topup_note = qb.text_input("Delivery / Supplier Note (optional)", key="topup_note",
-                                                   placeholder="e.g. Delivered by Kofi, Inv#123")
-                        qa2, qb2 = st.columns(2)
-                        if qa2.button("➕ Add to Stock", use_container_width=True, type="primary", key="quick_topup_btn"):
-                            update_stock(selected_id_upd, topup_qty)
-                            audit("STOCK_TOPUP",
-                                  f"{prod['name']} ({prod['size']}) +{topup_qty} — {topup_note}")
-                            st.success(f"✅ Added {topup_qty} units to {prod['name']}. New stock: {prod['stock_qty'] + topup_qty}")
-                            st.rerun()
-                        if qb2.button("🔄 Set Exact Stock Count", use_container_width=True, key="set_exact_btn"):
-                            st.session_state[f"show_exact_{selected_id_upd}"] = True
+                            if len(filtered_prods) > 12:
+                                st.caption(f"Showing first 12 of {len(filtered_prods)} — refine search to narrow down.")
 
-                        if st.session_state.get(f"show_exact_{selected_id_upd}"):
-                            _cur = int(prod['stock_qty'])
-                            exact_val = st.number_input("Set stock to exactly:", min_value=min(0, _cur),
-                                                        value=_cur, key="exact_stock_val")
-                            if st.button("✅ Confirm Exact Count", key="confirm_exact"):
-                                diff = exact_val - prod['stock_qty']
-                                update_stock(selected_id_upd, diff)
-                                audit("STOCK_SET",
-                                      f"{prod['name']} ({prod['size']}) set to {exact_val}")
-                                st.session_state[f"show_exact_{selected_id_upd}"] = False
-                                st.success(f"✅ Stock set to {exact_val} units.")
+                    selected_id_upd = st.session_state.get("selected_restock_id")
+                    if selected_id_upd:
+                        prod = get_product_by_id(selected_id_upd)
+                        if prod:
+                            st.markdown("---")
+                            top_left, top_right = st.columns([5, 2])
+                            top_left.markdown(
+                                f"**Editing:** &nbsp;<span style='font-size:1.1rem;font-weight:800;"
+                                f"color:#1a2035'>{prod['name']}</span> &nbsp;"
+                                f"<span style='color:#888;font-size:0.9rem'>({prod['size']})</span>",
+                                unsafe_allow_html=True
+                            )
+                            if top_right.button("🔄 Change Product", use_container_width=True, key="change_prod_btn"):
+                                st.session_state["selected_restock_id"] = None
                                 st.rerun()
 
-                        st.markdown("---")
-                        # ── Full edit form (price, name, etc.) ────────────────
-                        with st.expander("✏️ Edit Product Details (name, price, size, alert level)", expanded=False):
-                            can_price = has_perm("can_change_price")
-                            with st.form("update_product_form"):
-                                c1, c2 = st.columns(2)
-                                new_name = c1.text_input("Name", value=prod['name'])
-                                cats = ["Beer","Malt Drink","Soft Drink","Water","Spirit","Whisky",
-                                        "Wine","Energy Drink","Juice","Dairy Drink","Local Drink","Other"]
-                                new_cat = c2.selectbox("Category", cats,
-                                    index=cats.index(prod['category']) if prod['category'] in cats else 0)
-                                c3, c4 = st.columns(2)
-                                new_size  = c3.text_input("Size", value=prod['size'])
-                                new_alert = c4.number_input("Low Stock Alert", min_value=1,
-                                                            value=prod['low_stock_alert'])
-                                c5, c6 = st.columns(2)
-                                new_sell  = c5.number_input(
-                                    f"Wholesale Price ({currency})" + ("" if can_price else " 🔒 Read-only"),
-                                    min_value=0.0, value=float(prod['sell_price']), step=0.5,
-                                    disabled=not can_price
-                                )
-                                _cur_stock = int(prod['stock_qty'])
-                                new_stock_val = c6.number_input("Stock Quantity", min_value=min(0, _cur_stock),
-                                                                value=_cur_stock)
-                                col_save, col_del = st.columns(2)
-                                save_btn   = col_save.form_submit_button("💾 Save Changes",
-                                                use_container_width=True, type="primary")
-                                delete_btn = col_del.form_submit_button("🗑️ Deactivate Product",
-                                                use_container_width=True)
-                                if save_btn:
-                                    final_price = new_sell if can_price else prod['sell_price']
-                                    conn = get_db()
-                                    conn.execute(
-                                        "UPDATE products SET name=?, category=?, size=?, sell_price=?, stock_qty=?, low_stock_alert=? WHERE id=?",
-                                        (sanitize(new_name), new_cat, sanitize(new_size),
-                                         final_price, new_stock_val, new_alert, selected_id_upd)
+                            sc = prod['stock_qty']
+                            scolor = "#e53935" if sc<=0 else "#f57c00" if sc<=prod['low_stock_alert'] else "#2e7d32"
+                            slabel = "🚫 OUT OF STOCK" if sc<=0 else "⚠️ LOW STOCK" if sc<=prod['low_stock_alert'] else "✅ OK"
+                            st.markdown(
+                                f'''<div style="background:{scolor};color:white;padding:12px 18px;
+                                border-radius:10px;margin:10px 0;font-size:1.1rem;font-weight:bold;">
+                                📦 Current Stock: {sc} units &nbsp; {slabel}</div>''',
+                                unsafe_allow_html=True
+                            )
+
+                            st.markdown("**⚡ Quick Top-Up**")
+                            qa, qb = st.columns(2)
+                            topup_qty  = qa.number_input("Units to Add", min_value=1, value=24, key="topup_qty_new")
+                            topup_note = qb.text_input("Supplier Note (optional)", key="topup_note",
+                                                       placeholder="e.g. Delivered by Kofi, Inv#123")
+                            ta, tb = st.columns(2)
+                            if ta.button("➕ Add to Stock", use_container_width=True, type="primary", key="quick_topup_btn"):
+                                update_stock(selected_id_upd, topup_qty)
+                                audit("STOCK_TOPUP", f"{prod['name']} ({prod['size']}) +{topup_qty} — {topup_note}")
+                                st.success(f"✅ Added {topup_qty} units. New stock: {sc + topup_qty}")
+                                st.rerun()
+                            if tb.button("🔢 Set Exact Count", use_container_width=True, key="set_exact_btn"):
+                                st.session_state[f"show_exact_{selected_id_upd}"] = True
+
+                            if st.session_state.get(f"show_exact_{selected_id_upd}"):
+                                _cur = int(prod['stock_qty'])
+                                exact_val = st.number_input("Set stock to exactly:", min_value=min(0, _cur),
+                                                            value=_cur, key="exact_stock_val")
+                                if st.button("✅ Confirm", key="confirm_exact"):
+                                    update_stock(selected_id_upd, exact_val - _cur)
+                                    audit("STOCK_SET", f"{prod['name']} ({prod['size']}) → {exact_val}")
+                                    st.session_state[f"show_exact_{selected_id_upd}"] = False
+                                    st.success(f"✅ Stock set to {exact_val} units.")
+                                    st.rerun()
+
+                            st.markdown("---")
+                            with st.expander("✏️ Edit Product Details (name, price, size, alert level)", expanded=False):
+                                can_price = has_perm("can_change_price")
+                                with st.form("update_product_form"):
+                                    c1, c2 = st.columns(2)
+                                    new_name = c1.text_input("Name", value=prod['name'])
+                                    cats = ["Beer","Malt Drink","Soft Drink","Water","Spirit","Whisky",
+                                            "Wine","Energy Drink","Juice","Dairy Drink","Local Drink","Other"]
+                                    new_cat = c2.selectbox("Category", cats,
+                                        index=cats.index(prod['category']) if prod['category'] in cats else 0)
+                                    c3, c4 = st.columns(2)
+                                    new_size  = c3.text_input("Size", value=prod['size'])
+                                    new_alert = c4.number_input("Low Stock Alert", min_value=1, value=prod['low_stock_alert'])
+                                    c5, c6 = st.columns(2)
+                                    new_sell = c5.number_input(
+                                        f"Wholesale Price ({currency})" + ("" if can_price else " 🔒 Read-only"),
+                                        min_value=0.0, value=float(prod['sell_price']), step=0.5,
+                                        disabled=not can_price
                                     )
-                                    conn.commit(); conn.close()
-                                    get_all_products.clear()
-                                    get_low_stock_products.clear()
-                                    get_product_by_id.clear()
-                                    audit("PRODUCT_EDIT", f"{new_name} ({new_size})")
-                                    st.success("✅ Product updated!")
-                                    st.rerun()
-                                if delete_btn:
-                                    conn = get_db()
-                                    conn.execute("UPDATE products SET active=0 WHERE id=?",
-                                                 (selected_id_upd,))
-                                    conn.commit(); conn.close()
-                                    get_all_products.clear()
-                                    get_low_stock_products.clear()
-                                    get_product_by_id.clear()
-                                    audit("PRODUCT_DEACTIVATE", f"{prod['name']} ({prod['size']})")
-                                    st.success("Product deactivated.")
-                                    st.rerun()
+                                    _cs = int(prod['stock_qty'])
+                                    new_stock_val = c6.number_input("Stock Quantity",
+                                        min_value=min(0, _cs), value=_cs)
+                                    col_save, col_del = st.columns(2)
+                                    save_btn   = col_save.form_submit_button("💾 Save Changes",
+                                                    use_container_width=True, type="primary")
+                                    delete_btn = col_del.form_submit_button("🗑️ Deactivate",
+                                                    use_container_width=True)
+                                    if save_btn:
+                                        fp = new_sell if can_price else prod['sell_price']
+                                        conn = get_db()
+                                        conn.execute(
+                                            "UPDATE products SET name=?,category=?,size=?,sell_price=?,stock_qty=?,low_stock_alert=? WHERE id=?",
+                                            (sanitize(new_name), new_cat, sanitize(new_size), fp, new_stock_val, new_alert, selected_id_upd)
+                                        )
+                                        conn.commit(); conn.close()
+                                        get_all_products.clear(); get_low_stock_products.clear(); get_product_by_id.clear()
+                                        audit("PRODUCT_EDIT", f"{new_name} ({new_size})")
+                                        st.success("✅ Product updated!")
+                                        st.rerun()
+                                    if delete_btn:
+                                        conn = get_db()
+                                        conn.execute("UPDATE products SET active=0 WHERE id=?", (selected_id_upd,))
+                                        conn.commit(); conn.close()
+                                        get_all_products.clear(); get_low_stock_products.clear(); get_product_by_id.clear()
+                                        audit("PRODUCT_DEACTIVATE", f"{prod['name']} ({prod['size']})")
+                                        st.session_state["selected_restock_id"] = None
+                                        st.success("Product deactivated.")
+                                        st.rerun()
 
 # ═══════════════════════════════════════════════════════════════════════════════
 #  TAB 3: DAMAGED GOODS
