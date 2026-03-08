@@ -669,6 +669,7 @@ def _seed_products(c):
     )
 
 # ── Helper Functions ───────────────────────────────────────────────────────────
+@st.cache_data(ttl=30, show_spinner=False)
 def search_products(query):
     conn = get_db()
     q = f"%{query.lower()}%"
@@ -680,6 +681,7 @@ def search_products(query):
     return [dict(r) for r in rows]
 
 
+@st.cache_data(ttl=30, show_spinner=False)
 def get_all_products():
     conn = get_db()
     rows = conn.execute("SELECT * FROM products WHERE active=1 ORDER BY category, name, size").fetchall()
@@ -701,6 +703,7 @@ def update_stock(pid, delta):
     conn.close()
 
 
+@st.cache_data(ttl=30, show_spinner=False)
 def get_low_stock_products():
     conn = get_db()
     rows = conn.execute(
@@ -742,11 +745,13 @@ def log_damage(product_id, product_name, size, qty, reason, unit_cost):
     )
     conn.commit()
     conn.close()
+    get_damaged_in_range.clear()
     # Deduct from stock
     if product_id:
         update_stock(product_id, -qty)
 
 
+@st.cache_data(ttl=30, show_spinner=False)
 def get_sales_in_range(start_date, end_date):
     conn = get_db()
     rows = conn.execute(
@@ -757,6 +762,7 @@ def get_sales_in_range(start_date, end_date):
     return [dict(r) for r in rows]
 
 
+@st.cache_data(ttl=30, show_spinner=False)
 def get_damaged_in_range(start_date, end_date):
     conn = get_db()
     rows = conn.execute(
@@ -1013,8 +1019,11 @@ if 'pin_attempts' not in st.session_state:
 if 'lockout_until' not in st.session_state:
     st.session_state.lockout_until = None   # datetime when lockout ends
 
-MAX_ATTEMPTS  = 5     # wrong tries before lockout
-LOCKOUT_MINS  = 10    # minutes to lock after MAX_ATTEMPTS
+MAX_ATTEMPTS  = 5
+LOCKOUT_MINS  = 10
+
+# Check if st.fragment is available (Streamlit >= 1.33)
+_HAS_FRAGMENT = hasattr(st, 'fragment')
 
 
 # ── Init DB ────────────────────────────────────────────────────────────────────
@@ -1468,6 +1477,8 @@ if _page == '📦  Inventory':
                     )
                     conn.commit()
                     conn.close()
+                    get_all_products.clear()
+                    get_low_stock_products.clear()
                     st.success(f"✅ '{prod_name} ({prod_size})' added successfully!")
                 else:
                     st.error("Please fill in Product Name and Size.")
@@ -1618,6 +1629,9 @@ if _page == '📦  Inventory':
                                          final_price, new_stock_val, new_alert, selected_id_upd)
                                     )
                                     conn.commit(); conn.close()
+                                    get_all_products.clear()
+                                    get_low_stock_products.clear()
+                                    get_product_by_id.clear()
                                     audit("PRODUCT_EDIT", f"{new_name} ({new_size})")
                                     st.success("✅ Product updated!")
                                     st.rerun()
@@ -1626,6 +1640,9 @@ if _page == '📦  Inventory':
                                     conn.execute("UPDATE products SET active=0 WHERE id=?",
                                                  (selected_id_upd,))
                                     conn.commit(); conn.close()
+                                    get_all_products.clear()
+                                    get_low_stock_products.clear()
+                                    get_product_by_id.clear()
                                     audit("PRODUCT_DEACTIVATE", f"{prod['name']} ({prod['size']})")
                                     st.success("Product deactivated.")
                                     st.rerun()
