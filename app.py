@@ -1396,7 +1396,7 @@ if _page == '📦  Inventory':
                 if col_btn.button(f"➕ Restock", key=f"goto_restock_{item['id']}",
                                   use_container_width=True, type="primary"):
                     st.session_state.restock_product_id = item["id"]
-                    st.session_state.active_page    = "📦  Inventory"
+                    st.session_state.active_page = "📦  Inventory"
                     st.session_state.active_inv_tab = "✏️ Update Stock"
                     st.rerun()
             st.markdown("---")
