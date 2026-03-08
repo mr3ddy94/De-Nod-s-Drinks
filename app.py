@@ -68,9 +68,15 @@ st.markdown("""
   h3 { font-size: 1.3rem !important; font-weight: 700 !important; color: #1a2035; }
   p, li, label, .stMarkdown { font-size: 1.1rem !important; }
 
-  /* Bigger tab labels */
-  .stTabs [data-baseweb="tab"] { font-size: 1.1rem !important; font-weight: 700 !important; padding: 12px 22px !important; }
-  .stTabs [aria-selected="true"] { background: #FF6B2B !important; color: white !important; border-radius: 8px 8px 0 0 !important; }
+  /* Sidebar navigation */
+  [data-testid="stSidebar"] { min-width: 220px !important; max-width: 240px !important; }
+  [data-testid="stSidebar"] .stButton > button {
+      font-size: 1rem !important;
+      font-weight: 700 !important;
+      padding: 0.55rem 0.75rem !important;
+      text-align: left !important;
+      margin-bottom: 4px !important;
+  }
 
   /* Big buttons */
   .stButton > button {
@@ -997,6 +1003,10 @@ if 'last_activity' not in st.session_state:
     st.session_state.last_activity = datetime.now()
 if 'restock_product_id' not in st.session_state:
     st.session_state.restock_product_id = None
+if 'active_page' not in st.session_state:
+    st.session_state.active_page = "🛒  New Sale"
+if 'active_inv_tab' not in st.session_state:
+    st.session_state.active_inv_tab = "📋 View Stock" 
 # ── Brute-force protection ─────────────────────────────────────────────────────
 if 'pin_attempts' not in st.session_state:
     st.session_state.pin_attempts = 0       # wrong attempts this session
@@ -1023,7 +1033,10 @@ if st.session_state.logged_in:
         st.info("⏱️ You were logged out after inactivity. Please sign in again.")
         st.rerun()
     else:
-        st.session_state.last_activity = datetime.now()
+        # Only write to session state if more than 60s have passed
+        # — avoids forcing a re-render on every single widget interaction
+        if (datetime.now() - st.session_state.last_activity).total_seconds() > 60:
+            st.session_state.last_activity = datetime.now()
 
 # ══════════════════════════════════════════════════════════════════════════════
 #  PIN LOGIN GATE  —  nothing below renders until the user is authenticated
@@ -1133,24 +1146,34 @@ if not st.session_state.logged_in:
     st.stop()   # ← nothing below runs until logged in
 # ══════════════════════════════════════════════════════════════════════════════
 
-# ── Header ─────────────────────────────────────────────────────────────────────
+# ── Sidebar navigation ────────────────────────────────────────────────────────
 low_stock = get_low_stock_products()
 alert_text = f"⚠️ {len(low_stock)} item(s) low on stock" if low_stock else "✅ All stock levels OK"
 currency = get_setting('currency', 'GHS')
 
-hdr_col, signout_col = st.columns([5, 1])
-with hdr_col:
+NAV_PAGES = ["🛒  New Sale", "📦  Inventory", "⚠️  Damaged Goods", "📊  Reports", "⚙️  Settings"]
+
+with st.sidebar:
     st.markdown(f"""
-    <div class="app-header">
-      <div style="font-size:3rem;">🍺</div>
-      <div>
-        <h1>De-Nod's Wholesale Drinks</h1>
-        <p class="sub">👤 {st.session_state.logged_in_user} &nbsp;|&nbsp; {datetime.now().strftime("%A, %d %B %Y")} &nbsp;|&nbsp; {alert_text}</p>
-      </div>
+    <div style="text-align:center;padding:1rem 0 0.5rem 0;">
+      <div style="font-size:2.5rem;">🍺</div>
+      <div style="font-weight:900;font-size:1.1rem;color:#1a2035;">De-Nod's</div>
+      <div style="font-size:0.85rem;color:#666;">Wholesale Drinks</div>
     </div>
     """, unsafe_allow_html=True)
-with signout_col:
-    st.markdown("<br><br>", unsafe_allow_html=True)
+    st.markdown("---")
+    for page in NAV_PAGES:
+        is_active = st.session_state.active_page == page
+        btn_style = "primary" if is_active else "secondary"
+        if st.button(page, key=f"nav_{page}", use_container_width=True, type=btn_style):
+            st.session_state.active_page = page
+            st.rerun()
+    st.markdown("---")
+    st.markdown(f"👤 **{st.session_state.logged_in_user}**")
+    if st.session_state.is_admin:
+        st.caption("👑 Administrator")
+    st.caption(f"{alert_text}")
+    st.markdown("")
     if st.button("🔒 Sign Out", use_container_width=True):
         st.session_state.logged_in      = False
         st.session_state.logged_in_user = ""
@@ -1160,20 +1183,27 @@ with signout_col:
         st.session_state.last_receipt   = None
         st.rerun()
 
-# ── Main Tabs ──────────────────────────────────────────────────────────────────
-tab_sale, tab_inv, tab_damage, tab_reports, tab_settings = st.tabs([
-    "🛒  New Sale",
-    "📦  Inventory",
-    "⚠️  Damaged Goods",
-    "📊  Reports",
-    "⚙️  Settings"
-])
+# ── Page header ────────────────────────────────────────────────────────────────
+st.markdown(f"""
+<div class="app-header">
+  <div style="font-size:2.5rem;">{'🛒' if st.session_state.active_page == '🛒  New Sale' else
+                                   '📦' if st.session_state.active_page == '📦  Inventory' else
+                                   '⚠️' if st.session_state.active_page == '⚠️  Damaged Goods' else
+                                   '📊' if st.session_state.active_page == '📊  Reports' else '⚙️'}</div>
+  <div>
+    <h1>De-Nod's Wholesale Drinks</h1>
+    <p class="sub">📅 {datetime.now().strftime("%A, %d %B %Y")} &nbsp;|&nbsp; {alert_text}</p>
+  </div>
+</div>
+""", unsafe_allow_html=True)
+
+_page = st.session_state.active_page
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
 #  TAB 1: NEW SALE
 # ═══════════════════════════════════════════════════════════════════════════════
-with tab_sale:
+if _page == '🛒  New Sale':
     col_left, col_right = st.columns([3, 2], gap="large")
 
     with col_left:
@@ -1196,7 +1226,8 @@ with tab_sale:
                         c1.write(f"**{prod['name']}** — {prod['size']}")
                         c2.write(f"**{currency} {prod['sell_price']:.2f}** (wholesale)")
                         c3.write(f"{stock_color} Stock: **{prod['stock_qty']}**")
-                        add_qty = c4.number_input("", min_value=1, max_value=max(1, prod['stock_qty']),
+                        _avail = max(1, prod['stock_qty'])
+                        add_qty = c4.number_input("", min_value=1, max_value=_avail,
                                                    value=1, key=f"qty_{prod['id']}", label_visibility="collapsed")
                         if st.button(f"➕ Add to Cart", key=f"add_{prod['id']}"):
                             # Check if already in cart
@@ -1328,14 +1359,27 @@ with tab_sale:
 # ═══════════════════════════════════════════════════════════════════════════════
 #  TAB 2: INVENTORY
 # ═══════════════════════════════════════════════════════════════════════════════
-with tab_inv:
+if _page == '📦  Inventory':
     if not has_perm("can_view_inventory"):
         st.warning("🚫 You do not have permission to view inventory. Ask the administrator.")
     else:
-        inv_tab1, inv_tab2, inv_tab3 = st.tabs(["📋 View Stock", "➕ Add Product", "✏️ Update Stock"])
+        INV_TABS = ["📋 View Stock", "➕ Add Product", "✏️ Update Stock"]
+        # If arriving from a restock link, jump straight to Update Stock
+        if st.session_state.get("restock_product_id"):
+            st.session_state.active_inv_tab = "✏️ Update Stock"
+        inv_cols = st.columns(len(INV_TABS))
+        for _i, _itab in enumerate(INV_TABS):
+            _active = st.session_state.active_inv_tab == _itab
+            if inv_cols[_i].button(_itab, key=f"invnav_{_itab}",
+                                   use_container_width=True,
+                                   type="primary" if _active else "secondary"):
+                st.session_state.active_inv_tab = _itab
+                st.rerun()
+        st.markdown("---")
+        _itab = st.session_state.active_inv_tab
 
     # ── View Stock ──
-    with inv_tab1:
+    if _itab == '📋 View Stock':
         st.markdown('<div class="section-title">📋 Current Inventory</div>', unsafe_allow_html=True)
 
         # Low stock alert — each item is a clickable link to Update Stock
@@ -1352,6 +1396,8 @@ with tab_inv:
                 if col_btn.button(f"➕ Restock", key=f"goto_restock_{item['id']}",
                                   use_container_width=True, type="primary"):
                     st.session_state.restock_product_id = item["id"]
+                    st.session_state.active_page    = "📦  Inventory"
+                    st.session_state.active_inv_tab = "✏️ Update Stock"
                     st.rerun()
             st.markdown("---")
 
@@ -1392,7 +1438,7 @@ with tab_inv:
             c3.metric("Low Stock Items", len(low))
 
     # ── Add Product ──
-    with inv_tab2:
+    if _itab == '➕ Add Product':
         if not has_perm("can_add_product"):
             st.warning("🚫 You do not have permission to add products.")
         else:
@@ -1427,7 +1473,7 @@ with tab_inv:
                     st.error("Please fill in Product Name and Size.")
 
     # ── Update Stock ──
-    with inv_tab3:
+    if _itab == '✏️ Update Stock':
         if not has_perm("can_view_inventory"):
             st.warning("🚫 You do not have permission to update stock.")
         else:
@@ -1522,8 +1568,9 @@ with tab_inv:
                             st.session_state[f"show_exact_{selected_id_upd}"] = True
 
                         if st.session_state.get(f"show_exact_{selected_id_upd}"):
-                            exact_val = st.number_input("Set stock to exactly:", min_value=0,
-                                                        value=int(prod['stock_qty']), key="exact_stock_val")
+                            _cur = int(prod['stock_qty'])
+                            exact_val = st.number_input("Set stock to exactly:", min_value=min(0, _cur),
+                                                        value=_cur, key="exact_stock_val")
                             if st.button("✅ Confirm Exact Count", key="confirm_exact"):
                                 diff = exact_val - prod['stock_qty']
                                 update_stock(selected_id_upd, diff)
@@ -1554,8 +1601,9 @@ with tab_inv:
                                     min_value=0.0, value=float(prod['sell_price']), step=0.5,
                                     disabled=not can_price
                                 )
-                                new_stock_val = c6.number_input("Stock Quantity", min_value=0,
-                                                                value=int(prod['stock_qty']))
+                                _cur_stock = int(prod['stock_qty'])
+                                new_stock_val = c6.number_input("Stock Quantity", min_value=min(0, _cur_stock),
+                                                                value=_cur_stock)
                                 col_save, col_del = st.columns(2)
                                 save_btn   = col_save.form_submit_button("💾 Save Changes",
                                                 use_container_width=True, type="primary")
@@ -1585,7 +1633,7 @@ with tab_inv:
 # ═══════════════════════════════════════════════════════════════════════════════
 #  TAB 3: DAMAGED GOODS
 # ═══════════════════════════════════════════════════════════════════════════════
-with tab_damage:
+if _page == '⚠️  Damaged Goods':
     if not has_perm("can_log_damage"):
         st.warning("🚫 You do not have permission to log damaged goods. Ask the administrator.")
     else:
@@ -1666,7 +1714,7 @@ with tab_damage:
 # ═══════════════════════════════════════════════════════════════════════════════
 #  TAB 4: REPORTS
 # ═══════════════════════════════════════════════════════════════════════════════
-with tab_reports:
+if _page == '📊  Reports':
     if not has_perm("can_view_reports"):
         st.warning("🚫 You do not have permission to view reports. Ask the administrator.")
     else:
@@ -1788,7 +1836,7 @@ with tab_reports:
 # ═══════════════════════════════════════════════════════════════════════════════
 #  TAB 5: SETTINGS
 # ═══════════════════════════════════════════════════════════════════════════════
-with tab_settings:
+if _page == '⚙️  Settings':
     st.markdown('<div class="section-title">⚙️ Shop Settings</div>', unsafe_allow_html=True)
 
     col_s1, col_s2 = st.columns(2, gap="large")
@@ -1897,7 +1945,7 @@ with tab_settings:
                 st.info("No activity recorded yet.")
 
 # ── User Management — Admin Only ───────────────────────────────────────────────
-with tab_settings:
+if _page == '⚙️  Settings':
     st.markdown("---")
     st.markdown('<div class="section-title">👥 User Management</div>', unsafe_allow_html=True)
 
