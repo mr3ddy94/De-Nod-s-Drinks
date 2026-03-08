@@ -160,6 +160,55 @@ def get_db():
     return conn
 
 
+# ── Permissions ───────────────────────────────────────────────────────────────
+ALL_PERMISSIONS = {
+    "can_view_inventory":  "View Inventory & Stock",
+    "can_add_product":     "Add New Products",
+    "can_change_price":    "Change Prices",
+    "can_log_damage":      "Log Damaged Goods",
+    "can_view_reports":    "View Reports",
+    "can_void_sale":       "Void / Delete a Sale",
+    "can_manage_users":    "Manage Users & PINs",
+}
+DEFAULT_STAFF_PERMISSIONS = {
+    "can_view_inventory": True,
+    "can_add_product":    False,
+    "can_change_price":   False,
+    "can_log_damage":     True,
+    "can_view_reports":   False,
+    "can_void_sale":      False,
+    "can_manage_users":   False,
+}
+ADMIN_PERMISSIONS = {k: True for k in ALL_PERMISSIONS}
+
+
+def _run_migrations(c):
+    """Idempotent DB migrations — safe to run every startup."""
+    cols = [r[1] for r in c.execute("PRAGMA table_info(users)").fetchall()]
+    if "role" not in cols:
+        c.execute("ALTER TABLE users ADD COLUMN role TEXT DEFAULT 'staff'")
+    if "permissions" not in cols:
+        c.execute("ALTER TABLE users ADD COLUMN permissions TEXT DEFAULT '{}'")
+    # Promote first user to admin
+    c.execute("""UPDATE users SET role='admin', permissions=?
+                 WHERE id=(SELECT MIN(id) FROM users)
+                 AND (role IS NULL OR role='staff' OR role='')""",
+              (json.dumps(ADMIN_PERMISSIONS),))
+    # Default permissions for other users with empty perms
+    for row in c.execute(
+        "SELECT id, permissions FROM users WHERE id!=(SELECT MIN(id) FROM users)"
+    ).fetchall():
+        uid, praw = row
+        try:
+            existing = json.loads(praw) if praw and praw.strip() not in ("", "{}") else {}
+        except Exception:
+            existing = {}
+        if not existing:
+            c.execute("UPDATE users SET permissions=? WHERE id=?",
+                      (json.dumps(DEFAULT_STAFF_PERMISSIONS), uid))
+    c.execute("INSERT OR IGNORE INTO settings VALUES (?,?)", ("revenue_reset_date", ""))
+
+
 def init_db():
     conn = get_db()
     c = conn.cursor()
@@ -206,12 +255,13 @@ def init_db():
         value TEXT
     )''')
 
-    # ── Users table: name + 4-digit PIN ──
     c.execute('''CREATE TABLE IF NOT EXISTS users (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         name TEXT NOT NULL,
         pin TEXT NOT NULL,
-        active INTEGER DEFAULT 1
+        active INTEGER DEFAULT 1,
+        role TEXT DEFAULT 'staff',
+        permissions TEXT DEFAULT '{}'
     )''')
 
     defaults = {
@@ -221,17 +271,19 @@ def init_db():
         'shop_email': '',
         'receipt_footer': 'Thank you for your business! Come again soon.',
         'currency': 'GHS',
+        'revenue_reset_date': '',
     }
     for k, v in defaults.items():
         c.execute("INSERT OR IGNORE INTO settings VALUES (?,?)", (k, v))
 
-    # Default users — owner + one staff slot
     existing_users = c.execute("SELECT COUNT(*) FROM users").fetchone()[0]
     if existing_users == 0:
-        c.executemany("INSERT INTO users (name, pin) VALUES (?,?)", [
-            ("Stephen Acquah", "1234"),
-            ("Staff",          "5678"),
-        ])
+        c.execute("INSERT INTO users (name, pin, role, permissions) VALUES (?,?,?,?)",
+                  ("Stephen Acquah", "1234", "admin", json.dumps(ADMIN_PERMISSIONS)))
+        c.execute("INSERT INTO users (name, pin, role, permissions) VALUES (?,?,?,?)",
+                  ("Staff", "5678", "staff", json.dumps(DEFAULT_STAFF_PERMISSIONS)))
+
+    _run_migrations(c)
 
     conn.commit()
 
@@ -259,20 +311,46 @@ def set_setting(key, value):
 
 # ── Auth helpers ───────────────────────────────────────────────────────────────
 def check_pin(pin_entered):
-    """Return user name if PIN matches an active user, else None."""
+    """Return full user dict if PIN matches an active user, else None."""
     conn = get_db()
     row = conn.execute(
-        "SELECT name FROM users WHERE pin=? AND active=1", (pin_entered.strip(),)
+        "SELECT id, name, role, permissions FROM users WHERE pin=? AND active=1",
+        (pin_entered.strip(),)
     ).fetchone()
     conn.close()
-    return row[0] if row else None
+    if not row:
+        return None
+    try:
+        perms = json.loads(row[3]) if row[3] else {}
+    except Exception:
+        perms = {}
+    if row[2] == "admin":
+        perms = ADMIN_PERMISSIONS.copy()
+    return {"id": row[0], "name": row[1], "role": row[2], "permissions": perms}
 
 
 def get_all_users():
     conn = get_db()
-    rows = conn.execute("SELECT id, name, pin, active FROM users ORDER BY id").fetchall()
+    rows = conn.execute(
+        "SELECT id, name, pin, active, role, permissions FROM users ORDER BY id"
+    ).fetchall()
     conn.close()
-    return [dict(r) for r in rows]
+    result = []
+    for r in rows:
+        try:
+            perms = json.loads(r[5]) if r[5] else {}
+        except Exception:
+            perms = {}
+        result.append({"id": r[0], "name": r[1], "pin": r[2],
+                        "active": r[3], "role": r[4], "permissions": perms})
+    return result
+
+
+def has_perm(perm_key):
+    """True if logged-in user has permission or is admin."""
+    if st.session_state.get("is_admin", False):
+        return True
+    return st.session_state.get("permissions", {}).get(perm_key, False)
 
 
 def sync_new_products():
@@ -835,6 +913,10 @@ if 'logged_in' not in st.session_state:
     st.session_state.logged_in = False
 if 'logged_in_user' not in st.session_state:
     st.session_state.logged_in_user = ""
+if 'is_admin' not in st.session_state:
+    st.session_state.is_admin = False
+if 'permissions' not in st.session_state:
+    st.session_state.permissions = {}
 # ── Brute-force protection ─────────────────────────────────────────────────────
 if 'pin_attempts' not in st.session_state:
     st.session_state.pin_attempts = 0       # wrong attempts this session
@@ -925,9 +1007,10 @@ if not st.session_state.logged_in:
                 if pin_input:
                     user = check_pin(pin_input)
                     if user:
-                        # ✅ Correct — reset counters and let them in
                         st.session_state.logged_in      = True
-                        st.session_state.logged_in_user = user
+                        st.session_state.logged_in_user = user["name"]
+                        st.session_state.is_admin       = (user["role"] == "admin")
+                        st.session_state.permissions    = user["permissions"]
                         st.session_state.pin_attempts   = 0
                         st.session_state.lockout_until  = None
                         st.rerun()
@@ -972,10 +1055,12 @@ with hdr_col:
 with signout_col:
     st.markdown("<br><br>", unsafe_allow_html=True)
     if st.button("🔒 Sign Out", use_container_width=True):
-        st.session_state.logged_in = False
+        st.session_state.logged_in      = False
         st.session_state.logged_in_user = ""
-        st.session_state.cart = []
-        st.session_state.last_receipt = None
+        st.session_state.is_admin       = False
+        st.session_state.permissions    = {}
+        st.session_state.cart           = []
+        st.session_state.last_receipt   = None
         st.rerun()
 
 # ── Main Tabs ──────────────────────────────────────────────────────────────────
@@ -1143,7 +1228,10 @@ with tab_sale:
 #  TAB 2: INVENTORY
 # ═══════════════════════════════════════════════════════════════════════════════
 with tab_inv:
-    inv_tab1, inv_tab2, inv_tab3 = st.tabs(["📋 View Stock", "➕ Add Product", "✏️ Update Stock"])
+    if not has_perm("can_view_inventory"):
+        st.warning("🚫 You do not have permission to view inventory. Ask the administrator.")
+    else:
+        inv_tab1, inv_tab2, inv_tab3 = st.tabs(["📋 View Stock", "➕ Add Product", "✏️ Update Stock"])
 
     # ── View Stock ──
     with inv_tab1:
@@ -1195,7 +1283,10 @@ with tab_inv:
 
     # ── Add Product ──
     with inv_tab2:
-        st.markdown('<div class="section-title">➕ Add New Product</div>', unsafe_allow_html=True)
+        if not has_perm("can_add_product"):
+            st.warning("🚫 You do not have permission to add products.")
+        else:
+            st.markdown('<div class="section-title">➕ Add New Product</div>', unsafe_allow_html=True)
         with st.form("add_product_form", clear_on_submit=True):
             c1, c2 = st.columns(2)
             prod_name = c1.text_input("Product Name *", placeholder="e.g. Guinness Stout")
@@ -1227,7 +1318,10 @@ with tab_inv:
 
     # ── Update Stock ──
     with inv_tab3:
-        st.markdown('<div class="section-title">✏️ Update Existing Product</div>', unsafe_allow_html=True)
+        if not has_perm("can_view_inventory"):
+            st.warning("🚫 You do not have permission to update stock.")
+        else:
+            st.markdown('<div class="section-title">✏️ Update Existing Product</div>', unsafe_allow_html=True)
 
         all_prods = get_all_products()
         if all_prods:
@@ -1288,7 +1382,10 @@ with tab_inv:
 #  TAB 3: DAMAGED GOODS
 # ═══════════════════════════════════════════════════════════════════════════════
 with tab_damage:
-    col_d1, col_d2 = st.columns([2, 3], gap="large")
+    if not has_perm("can_log_damage"):
+        st.warning("🚫 You do not have permission to log damaged goods. Ask the administrator.")
+    else:
+        col_d1, col_d2 = st.columns([2, 3], gap="large")
 
     with col_d1:
         st.markdown('<div class="section-title">⚠️ Log Damaged Goods</div>', unsafe_allow_html=True)
@@ -1364,7 +1461,10 @@ with tab_damage:
 #  TAB 4: REPORTS
 # ═══════════════════════════════════════════════════════════════════════════════
 with tab_reports:
-    st.markdown('<div class="section-title">📊 Sales Reports</div>', unsafe_allow_html=True)
+    if not has_perm("can_view_reports"):
+        st.warning("🚫 You do not have permission to view reports. Ask the administrator.")
+    else:
+        st.markdown('<div class="section-title">📊 Sales Reports</div>', unsafe_allow_html=True)
 
     report_type = st.radio("Report Period:", ["📅 Today", "📅 This Week", "📅 This Month", "📆 Custom Range"],
                            horizontal=True, key="report_type")
@@ -1512,15 +1612,39 @@ with tab_settings:
         st.markdown("**📊 Database Info**")
         conn = get_db()
         total_products = conn.execute("SELECT COUNT(*) FROM products WHERE active=1").fetchone()[0]
-        total_sales = conn.execute("SELECT COUNT(*) FROM sales").fetchone()[0]
-        total_rev = conn.execute("SELECT COALESCE(SUM(subtotal),0) FROM sales").fetchone()[0]
+        total_sales    = conn.execute("SELECT COUNT(*) FROM sales").fetchone()[0]
+        reset_date     = get_setting("revenue_reset_date", "")
+        if reset_date:
+            total_rev = conn.execute(
+                "SELECT COALESCE(SUM(subtotal),0) FROM sales WHERE sale_date >= ?",
+                (reset_date,)
+            ).fetchone()[0]
+        else:
+            total_rev = conn.execute("SELECT COALESCE(SUM(subtotal),0) FROM sales").fetchone()[0]
         total_damage = conn.execute("SELECT COALESCE(SUM(total_loss),0) FROM damaged_goods").fetchone()[0]
         conn.close()
 
         st.metric("Products in Catalogue", total_products)
         st.metric("Total Transactions", total_sales)
-        st.metric(f"Lifetime Revenue ({get_setting('currency','GHS')})", f"{total_rev:,.2f}")
-        st.metric(f"Total Damage Losses ({get_setting('currency','GHS')})", f"{total_damage:,.2f}")
+        rev_label = f"Revenue ({get_setting('currency','GHS')})"
+        if reset_date:
+            rev_label += f"  since {reset_date}"
+        st.metric(rev_label, f"{total_rev:,.2f}")
+        st.metric(f"Damage Losses ({get_setting('currency','GHS')})", f"{total_damage:,.2f}")
+
+        if st.session_state.is_admin:
+            st.markdown("---")
+            st.markdown("**🔄 Reset Revenue Counter**")
+            st.caption("Resets the display only — all sales data is kept safely.")
+            if st.button("🔄 Reset Revenue Counter to Today", use_container_width=True):
+                set_setting("revenue_reset_date", date.today().isoformat())
+                st.success(f"✅ Revenue counter reset from {date.today().strftime('%d %b %Y')}.")
+                st.rerun()
+            if reset_date:
+                if st.button("↩️ Show All-Time Revenue", use_container_width=True):
+                    set_setting("revenue_reset_date", "")
+                    st.success("✅ Showing all-time revenue again.")
+                    st.rerun()
 
         st.markdown("---")
         st.markdown("**💾 Backup Database**")
@@ -1536,74 +1660,117 @@ with tab_settings:
 
         st.markdown("---")
         st.markdown("**🔄 Sync Product Catalogue**")
-        st.caption("Use this to load new drinks added in an app update. Your existing products, prices and stock are never changed.")
+        st.caption("Loads new drinks added in an app update. Existing data is never changed.")
         if st.button("🔄 Sync New Products from Latest Update", use_container_width=True):
             added = sync_new_products()
             if added > 0:
                 st.success(f"✅ {added} new product(s) added to your catalogue!")
             else:
-                st.info("✅ Your catalogue is already up to date — no new products to add.")
+                st.info("✅ Catalogue is up to date.")
             st.rerun()
 
         st.markdown("---")
         st.markdown("**ℹ️ App Info**")
         st.info("De-Nod's Drinks Manager v1.0\nBuilt for De-Nod's Wholesale Drinks, Ghana.\nData stored locally in denods.db")
 
-# ── PIN / User Management (full-width below the two columns) ───────────────────
+# ── User Management — Admin Only ───────────────────────────────────────────────
 with tab_settings:
     st.markdown("---")
-    st.markdown('<div class="section-title">🔐 PIN & User Management</div>', unsafe_allow_html=True)
-    st.caption("Each person who uses the app gets their own name and PIN. Change any PIN here at any time.")
+    st.markdown('<div class="section-title">👥 User Management</div>', unsafe_allow_html=True)
 
-    users = get_all_users()
+    if not st.session_state.is_admin:
+        st.warning("🚫 Only the administrator (Stephen Acquah) can manage users and permissions.")
+    else:
+        st.caption("Manage who can access the app and what each person is allowed to do.")
+        users = get_all_users()
 
-    # Edit existing users
-    for u in users:
-        with st.expander(f"{'✅' if u['active'] else '🚫'}  {u['name']}", expanded=False):
-            with st.form(f"user_form_{u['id']}"):
-                c1, c2, c3 = st.columns([3, 2, 2])
-                new_uname = c1.text_input("Name", value=u['name'], key=f"uname_{u['id']}")
-                new_pin   = c2.text_input("PIN (numbers only)", value=u['pin'],
-                                          key=f"upin_{u['id']}", max_chars=6,
-                                          help="4–6 digit PIN")
-                new_active = c3.selectbox("Status", ["Active", "Disabled"],
-                                          index=0 if u['active'] else 1,
-                                          key=f"uact_{u['id']}")
-                if st.form_submit_button("💾 Save", use_container_width=True, type="primary"):
-                    if new_pin.strip().isdigit() and len(new_pin.strip()) >= 4:
-                        conn = get_db()
+        for u in users:
+            is_self     = (u["name"] == st.session_state.logged_in_user)
+            role_badge  = "👑 Admin" if u["role"] == "admin" else "👤 Staff"
+            status_icon = "✅" if u["active"] else "🚫"
+            with st.expander(f"{status_icon}  {u['name']}  —  {role_badge}", expanded=False):
+                with st.form(f"user_form_{u['id']}"):
+                    c1, c2, c3 = st.columns([3, 2, 2])
+                    new_uname  = c1.text_input("Name", value=u["name"], key=f"uname_{u['id']}")
+                    new_pin    = c2.text_input("PIN", value=u["pin"], key=f"upin_{u['id']}", max_chars=6)
+                    new_active = c3.selectbox("Status", ["Active", "Disabled"],
+                                              index=0 if u["active"] else 1,
+                                              key=f"uact_{u['id']}")
+                    role_opts  = ["admin", "staff"]
+                    new_role   = st.selectbox("Role", role_opts,
+                                              index=role_opts.index(u["role"] if u["role"] in role_opts else "staff"),
+                                              key=f"urole_{u['id']}",
+                                              disabled=is_self,
+                                              help="You cannot change your own role.")
+                    st.markdown("**Permissions:**")
+                    new_perms = {}
+                    if new_role == "admin":
+                        st.info("Admins have all permissions automatically.")
+                        new_perms = ADMIN_PERMISSIONS.copy()
+                    else:
+                        pcols = st.columns(2)
+                        for idx2, (pkey, plabel) in enumerate(ALL_PERMISSIONS.items()):
+                            if pkey == "can_manage_users":
+                                continue
+                            cur = u["permissions"].get(pkey, False)
+                            new_perms[pkey] = pcols[idx2 % 2].checkbox(
+                                plabel, value=cur, key=f"perm_{u['id']}_{pkey}")
+                        new_perms["can_manage_users"] = False
+
+                    if st.form_submit_button("💾 Save Changes", use_container_width=True, type="primary"):
+                        if new_pin.strip().isdigit() and len(new_pin.strip()) >= 4:
+                            fr = "admin" if new_role == "admin" else "staff"
+                            fp = ADMIN_PERMISSIONS.copy() if fr == "admin" else new_perms
+                            conn = get_db()
+                            conn.execute(
+                                "UPDATE users SET name=?, pin=?, active=?, role=?, permissions=? WHERE id=?",
+                                (new_uname.strip(), new_pin.strip(),
+                                 1 if new_active == "Active" else 0, fr, json.dumps(fp), u["id"])
+                            )
+                            conn.commit()
+                            conn.close()
+                            st.success(f"✅ {new_uname} updated.")
+                            st.rerun()
+                        else:
+                            st.error("PIN must be 4–6 digits.")
+
+        st.markdown("---")
+        st.markdown("**➕ Add New User**")
+        with st.form("add_user_form", clear_on_submit=True):
+            ca, cb, cc = st.columns([3, 2, 2])
+            add_name = ca.text_input("Name", placeholder="e.g. Abena Mensah")
+            add_pin  = cb.text_input("PIN", placeholder="e.g. 4321", max_chars=6)
+            add_role = cc.selectbox("Role", ["staff", "admin"])
+            st.markdown("**Starting Permissions** (for staff):")
+            nup = {}
+            if add_role == "admin":
+                st.info("Admins have all permissions automatically.")
+                nup = ADMIN_PERMISSIONS.copy()
+            else:
+                pc2 = st.columns(2)
+                for idx3, (pkey, plabel) in enumerate(ALL_PERMISSIONS.items()):
+                    if pkey == "can_manage_users":
+                        continue
+                    dv = DEFAULT_STAFF_PERMISSIONS.get(pkey, False)
+                    nup[pkey] = pc2[idx3 % 2].checkbox(plabel, value=dv, key=f"np_{pkey}")
+                nup["can_manage_users"] = False
+            if st.form_submit_button("➕ Add User", use_container_width=True, type="primary"):
+                if add_name.strip() and add_pin.strip().isdigit() and len(add_pin.strip()) >= 4:
+                    conn = get_db()
+                    clash = conn.execute("SELECT name FROM users WHERE pin=? AND active=1",
+                                         (add_pin.strip(),)).fetchone()
+                    if clash:
+                        st.error(f"PIN already used by {clash[0]}. Choose another.")
+                    else:
+                        fr2 = add_role
+                        fp2 = ADMIN_PERMISSIONS.copy() if fr2 == "admin" else nup
                         conn.execute(
-                            "UPDATE users SET name=?, pin=?, active=? WHERE id=?",
-                            (new_uname.strip(), new_pin.strip(),
-                             1 if new_active == "Active" else 0, u['id'])
+                            "INSERT INTO users (name, pin, role, permissions) VALUES (?,?,?,?)",
+                            (add_name.strip(), add_pin.strip(), fr2, json.dumps(fp2))
                         )
                         conn.commit()
-                        conn.close()
-                        st.success(f"✅ Updated {new_uname}.")
+                        st.success(f"✅ {add_name} added with PIN {add_pin}.")
                         st.rerun()
-                    else:
-                        st.error("PIN must be 4–6 digits (numbers only).")
-
-    # Add a new user
-    st.markdown("**➕ Add New User**")
-    with st.form("add_user_form", clear_on_submit=True):
-        ca, cb = st.columns(2)
-        add_name = ca.text_input("Name", placeholder="e.g. Abena")
-        add_pin  = cb.text_input("PIN", placeholder="e.g. 4321", max_chars=6)
-        if st.form_submit_button("➕ Add User", use_container_width=True, type="primary"):
-            if add_name.strip() and add_pin.strip().isdigit() and len(add_pin.strip()) >= 4:
-                # Check PIN not already taken
-                conn = get_db()
-                clash = conn.execute("SELECT name FROM users WHERE pin=? AND active=1",
-                                     (add_pin.strip(),)).fetchone()
-                if clash:
-                    st.error(f"That PIN is already used by {clash[0]}. Choose a different one.")
+                    conn.close()
                 else:
-                    conn.execute("INSERT INTO users (name, pin) VALUES (?,?)",
-                                 (add_name.strip(), add_pin.strip()))
-                    conn.commit()
-                    st.success(f"✅ {add_name} added! They can now log in with PIN {add_pin}.")
-                    st.rerun()
-                conn.close()
-            else:
-                st.error("Please enter a name and a PIN of at least 4 digits.")
+                    st.error("Please enter a name and a PIN of at least 4 digits.")
