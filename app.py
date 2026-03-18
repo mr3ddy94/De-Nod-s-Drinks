@@ -15,10 +15,10 @@ import uuid
 
 # ── Cloud DB detection (auto: Supabase on Streamlit Cloud, SQLite offline) ────
 try:
-    _PG_URL = st.secrets["DATABASE_URL"]
+    _PG_CFG = st.secrets["supabase"]
     _USE_PG = True
 except Exception:
-    _PG_URL = None
+    _PG_CFG = None
     _USE_PG = False
 
 if _USE_PG:
@@ -27,7 +27,7 @@ if _USE_PG:
         import psycopg2.extras
     except ImportError:
         _USE_PG = False
-        _PG_URL = None
+        _PG_CFG = None
 
 
 class _CursorWrap:
@@ -254,16 +254,13 @@ st.markdown("""
 # ── Database ───────────────────────────────────────────────────────────────────
 def get_db():
     if _USE_PG:
-        # Parse URL manually so special characters in passwords don't break parsing
-        from urllib.parse import urlparse, unquote
-        p = urlparse(_PG_URL)
         raw = psycopg2.connect(
-            host=p.hostname,
-            port=p.port or 5432,
-            dbname=(p.path or '/postgres').lstrip('/') or 'postgres',
-            user=unquote(p.username or ''),
-            password=unquote(p.password or ''),
-            sslmode='require',
+            host=str(_PG_CFG["host"]),
+            port=int(_PG_CFG.get("port", 5432)),
+            dbname=str(_PG_CFG.get("dbname", "postgres")),
+            user=str(_PG_CFG["user"]),
+            password=str(_PG_CFG["password"]),
+            sslmode="require",
             connect_timeout=15,
         )
         raw.autocommit = False
