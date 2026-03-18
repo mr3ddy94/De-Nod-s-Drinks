@@ -254,11 +254,18 @@ st.markdown("""
 # ── Database ───────────────────────────────────────────────────────────────────
 def get_db():
     if _USE_PG:
-        # Force sslmode=require (required by Supabase)
-        _url = _PG_URL
-        if "sslmode" not in _url:
-            _url += ("&" if "?" in _url else "?") + "sslmode=require"
-        raw = psycopg2.connect(_url, connect_timeout=15)
+        # Parse URL manually so special characters in passwords don't break parsing
+        from urllib.parse import urlparse, unquote
+        p = urlparse(_PG_URL)
+        raw = psycopg2.connect(
+            host=p.hostname,
+            port=p.port or 5432,
+            dbname=(p.path or '/postgres').lstrip('/') or 'postgres',
+            user=unquote(p.username or ''),
+            password=unquote(p.password or ''),
+            sslmode='require',
+            connect_timeout=15,
+        )
         raw.autocommit = False
         return _ConnWrap(raw)
     conn = sqlite3.connect(DB_PATH, timeout=10)
