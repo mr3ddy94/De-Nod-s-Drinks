@@ -292,13 +292,11 @@ def get_db():
     if _USE_PG:
         pool = _get_pg_pool()
         raw  = pool.getconn()
-        # Health-check: if the connection went stale, reset it
+        # Health-check: if the connection went stale, replace it
         try:
-            raw.isolation_level  # cheap attribute read
-            if raw.closed:
+            if raw.closed != 0:
                 raise Exception("closed")
         except Exception:
-            # Connection is dead — close it and get a fresh one
             try: pool.putconn(raw, close=True)
             except: pass
             raw = pool.getconn()
@@ -484,13 +482,20 @@ def init_db():
     conn.close()
 
 
-@st.cache_data(ttl=600, show_spinner=False)
+_settings_cache = {}   # plain dict — no Streamlit rendering side-effects
+
 def get_setting(key, default=''):
+    if key in _settings_cache:
+        return _settings_cache[key]
     conn = get_db()
     row = conn.execute("SELECT value FROM settings WHERE key=?", (key,)).fetchone()
     conn.close()
-    if row is None: return default
-    return row['value'] if isinstance(row, dict) else row[0]
+    if row is None:
+        _settings_cache[key] = default
+        return default
+    val = row['value'] if isinstance(row, dict) else row[0]
+    _settings_cache[key] = val
+    return val
 
 
 def set_setting(key, value):
@@ -501,7 +506,7 @@ def set_setting(key, value):
     )
     conn.commit()
     conn.close()
-    get_setting.clear()   # bust the cache so next read is fresh
+    _settings_cache.clear()   # bust the in-process cache
 
 
 # ── Auth helpers ───────────────────────────────────────────────────────────────
@@ -1313,9 +1318,15 @@ if not st.session_state.logged_in:
 # ══════════════════════════════════════════════════════════════════════════════
 
 # ── Sidebar navigation ────────────────────────────────────────────────────────
-low_stock = get_low_stock_products()
-alert_text = f"⚠️ {len(low_stock)} item(s) low on stock" if low_stock else "✅ All stock levels OK"
-currency = get_setting('currency', 'GHS')
+# Throttle: only re-fetch low stock from DB once per 60s, not on every click
+_now_ts = datetime.now().timestamp()
+if ('_low_stock_count' not in st.session_state or
+        _now_ts - st.session_state.get('_low_stock_ts', 0) > 60):
+    st.session_state._low_stock_count = len(get_low_stock_products())
+    st.session_state._low_stock_ts    = _now_ts
+_low_count = st.session_state._low_stock_count
+alert_text = f"⚠️ {_low_count} item(s) low on stock" if _low_count else "✅ All stock levels OK"
+currency   = get_setting('currency', 'GHS')
 
 NAV_PAGES = ["🛒  New Sale", "📦  Inventory", "⚠️  Damaged Goods", "📊  Reports", "⚙️  Settings"]
 
@@ -1338,7 +1349,7 @@ with st.sidebar:
     st.markdown(f"👤 **{st.session_state.logged_in_user}**")
     if st.session_state.is_admin:
         st.caption("👑 Administrator")
-    st.caption(f"{alert_text}")
+    st.caption(alert_text)
     st.markdown("")
     if st.button("🔒 Sign Out", use_container_width=True):
         st.session_state.logged_in      = False
