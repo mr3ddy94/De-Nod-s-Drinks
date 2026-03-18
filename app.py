@@ -25,6 +25,7 @@ if _USE_PG:
     try:
         import psycopg2
         import psycopg2.extras
+        import psycopg2.pool
     except ImportError:
         _USE_PG = False
         _PG_CFG = None
@@ -50,9 +51,11 @@ class _CursorWrap:
 
 
 class _ConnWrap:
-    """psycopg2 connection that speaks the sqlite3 connection API."""
-    def __init__(self, raw):
-        self._c = raw
+    """psycopg2 connection that speaks the sqlite3 connection API.
+    When closed, returns the connection to the pool instead of destroying it."""
+    def __init__(self, raw, pool=None):
+        self._c   = raw
+        self._pool = pool
     def execute(self, sql, params=()):
         cur = self._c.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
         try:
@@ -71,9 +74,21 @@ class _ConnWrap:
     def commit(self):
         self._c.commit()
     def close(self):
-        try: self._c.commit()
-        except: pass
-        self._c.close()
+        """Return connection to pool (not destroyed — reused next call)."""
+        try:
+            self._c.commit()
+        except Exception:
+            try: self._c.rollback()
+            except: pass
+        if self._pool:
+            try:
+                self._pool.putconn(self._c)
+            except Exception:
+                try: self._c.close()
+                except: pass
+        else:
+            try: self._c.close()
+            except: pass
 
 # ── Config ────────────────────────────────────────────────────────────────────
 DB_PATH = "denods.db"
@@ -252,19 +267,43 @@ st.markdown("""
 
 
 # ── Database ───────────────────────────────────────────────────────────────────
+@st.cache_resource(show_spinner=False)
+def _get_pg_pool():
+    """Create a persistent connection pool — lives for the app's lifetime.
+    min=2 connections always ready, max=5 handles bursts. Reused every call."""
+    return psycopg2.pool.ThreadedConnectionPool(
+        minconn=2,
+        maxconn=5,
+        host=str(_PG_CFG["host"]),
+        port=int(_PG_CFG.get("port", 5432)),
+        dbname=str(_PG_CFG.get("dbname", "postgres")),
+        user=str(_PG_CFG["user"]),
+        password=str(_PG_CFG["password"]),
+        sslmode="require",
+        connect_timeout=15,
+        keepalives=1,
+        keepalives_idle=30,
+        keepalives_interval=10,
+        keepalives_count=3,
+    )
+
+
 def get_db():
     if _USE_PG:
-        raw = psycopg2.connect(
-            host=str(_PG_CFG["host"]),
-            port=int(_PG_CFG.get("port", 5432)),
-            dbname=str(_PG_CFG.get("dbname", "postgres")),
-            user=str(_PG_CFG["user"]),
-            password=str(_PG_CFG["password"]),
-            sslmode="require",
-            connect_timeout=15,
-        )
+        pool = _get_pg_pool()
+        raw  = pool.getconn()
+        # Health-check: if the connection went stale, reset it
+        try:
+            raw.isolation_level  # cheap attribute read
+            if raw.closed:
+                raise Exception("closed")
+        except Exception:
+            # Connection is dead — close it and get a fresh one
+            try: pool.putconn(raw, close=True)
+            except: pass
+            raw = pool.getconn()
         raw.autocommit = False
-        return _ConnWrap(raw)
+        return _ConnWrap(raw, pool=pool)
     conn = sqlite3.connect(DB_PATH, timeout=10)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA journal_mode=WAL")
@@ -445,6 +484,7 @@ def init_db():
     conn.close()
 
 
+@st.cache_data(ttl=600, show_spinner=False)
 def get_setting(key, default=''):
     conn = get_db()
     row = conn.execute("SELECT value FROM settings WHERE key=?", (key,)).fetchone()
@@ -461,6 +501,7 @@ def set_setting(key, value):
     )
     conn.commit()
     conn.close()
+    get_setting.clear()   # bust the cache so next read is fresh
 
 
 # ── Auth helpers ───────────────────────────────────────────────────────────────
@@ -515,7 +556,7 @@ def _row_val(row, idx=0):
 
 
 def audit(action, detail=""):
-    """Write a timestamped audit entry for the currently logged-in user."""
+    """Write a timestamped audit entry. Never crashes the app."""
     try:
         conn = get_db()
         conn.execute(
@@ -525,9 +566,11 @@ def audit(action, detail=""):
              sanitize(action, 100), sanitize(detail, 300))
         )
         conn.commit()
-        conn.close()
     except Exception:
-        pass  # Never crash the app because of logging
+        pass
+    finally:
+        try: conn.close()
+        except: pass
 
 
 def sync_new_products():
@@ -787,7 +830,7 @@ def _seed_products(c):
     )
 
 # ── Helper Functions ───────────────────────────────────────────────────────────
-@st.cache_data(ttl=300, show_spinner=False)
+@st.cache_data(ttl=600, show_spinner=False)
 def search_products(query):
     conn = get_db()
     q = f"%{query.lower()}%"
@@ -799,7 +842,7 @@ def search_products(query):
     return [dict(r) for r in rows]
 
 
-@st.cache_data(ttl=300, show_spinner=False)
+@st.cache_data(ttl=600, show_spinner=False)
 def get_all_products():
     conn = get_db()
     rows = conn.execute("SELECT * FROM products WHERE active=1 ORDER BY category, name, size").fetchall()
@@ -821,7 +864,7 @@ def update_stock(pid, delta):
     conn.close()
 
 
-@st.cache_data(ttl=300, show_spinner=False)
+@st.cache_data(ttl=600, show_spinner=False)
 def get_low_stock_products():
     conn = get_db()
     rows = conn.execute(
@@ -869,7 +912,7 @@ def log_damage(product_id, product_name, size, qty, reason, unit_cost):
         update_stock(product_id, -qty)
 
 
-@st.cache_data(ttl=300, show_spinner=False)
+@st.cache_data(ttl=600, show_spinner=False)
 def get_sales_in_range(start_date, end_date):
     conn = get_db()
     rows = conn.execute(
@@ -880,7 +923,7 @@ def get_sales_in_range(start_date, end_date):
     return [dict(r) for r in rows]
 
 
-@st.cache_data(ttl=300, show_spinner=False)
+@st.cache_data(ttl=600, show_spinner=False)
 def get_damaged_in_range(start_date, end_date):
     conn = get_db()
     rows = conn.execute(
