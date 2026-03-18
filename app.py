@@ -254,7 +254,11 @@ st.markdown("""
 # ── Database ───────────────────────────────────────────────────────────────────
 def get_db():
     if _USE_PG:
-        raw = psycopg2.connect(_PG_URL, connect_timeout=10)
+        # Force sslmode=require (required by Supabase)
+        _url = _PG_URL
+        if "sslmode" not in _url:
+            _url += ("&" if "?" in _url else "?") + "sslmode=require"
+        raw = psycopg2.connect(_url, connect_timeout=15)
         raw.autocommit = False
         return _ConnWrap(raw)
     conn = sqlite3.connect(DB_PATH, timeout=10)
