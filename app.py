@@ -13,6 +13,68 @@ from datetime import datetime, date, timedelta
 import pandas as pd
 import uuid
 
+# ── Cloud DB detection (auto: Supabase on Streamlit Cloud, SQLite offline) ────
+try:
+    _PG_URL = st.secrets["DATABASE_URL"]
+    _USE_PG = True
+except Exception:
+    _PG_URL = None
+    _USE_PG = False
+
+if _USE_PG:
+    try:
+        import psycopg2
+        import psycopg2.extras
+    except ImportError:
+        _USE_PG = False
+        _PG_URL = None
+
+
+class _CursorWrap:
+    """psycopg2 cursor that speaks the sqlite3 cursor API."""
+    def __init__(self, cur):
+        self._cur = cur
+    def execute(self, sql, params=()):
+        self._cur.execute(sql.replace('?','%s'), params or ())
+        return self
+    def executemany(self, sql, params_list):
+        self._cur.executemany(sql.replace('?','%s'), params_list)
+        return self
+    def fetchone(self):
+        return self._cur.fetchone()
+    def fetchall(self):
+        return self._cur.fetchall()
+    @property
+    def rowcount(self):
+        return self._cur.rowcount
+
+
+class _ConnWrap:
+    """psycopg2 connection that speaks the sqlite3 connection API."""
+    def __init__(self, raw):
+        self._c = raw
+    def execute(self, sql, params=()):
+        cur = self._c.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+        try:
+            cur.execute(sql.replace('?','%s'), params or ())
+        except Exception:
+            self._c.rollback(); raise
+        return _CursorWrap(cur)
+    def executemany(self, sql, params_list):
+        cur = self._c.cursor()
+        try:
+            cur.executemany(sql.replace('?','%s'), params_list)
+        except Exception:
+            self._c.rollback(); raise
+    def cursor(self):
+        return _CursorWrap(self._c.cursor(cursor_factory=psycopg2.extras.RealDictCursor))
+    def commit(self):
+        self._c.commit()
+    def close(self):
+        try: self._c.commit()
+        except: pass
+        self._c.close()
+
 # ── Config ────────────────────────────────────────────────────────────────────
 DB_PATH = "denods.db"
 
@@ -191,13 +253,16 @@ st.markdown("""
 
 # ── Database ───────────────────────────────────────────────────────────────────
 def get_db():
+    if _USE_PG:
+        raw = psycopg2.connect(_PG_URL, connect_timeout=10)
+        raw.autocommit = False
+        return _ConnWrap(raw)
     conn = sqlite3.connect(DB_PATH, timeout=10)
     conn.row_factory = sqlite3.Row
-    # WAL mode: much faster writes, no blocking, safe for offline use
     conn.execute("PRAGMA journal_mode=WAL")
-    conn.execute("PRAGMA synchronous=NORMAL")   # faster than FULL, still crash-safe
-    conn.execute("PRAGMA cache_size=-8000")      # 8 MB page cache in memory
-    conn.execute("PRAGMA temp_store=MEMORY")     # temp tables in RAM not disk
+    conn.execute("PRAGMA synchronous=NORMAL")
+    conn.execute("PRAGMA cache_size=-8000")
+    conn.execute("PRAGMA temp_store=MEMORY")
     return conn
 
 
@@ -224,22 +289,32 @@ ADMIN_PERMISSIONS = {k: True for k in ALL_PERMISSIONS}
 
 
 def _run_migrations(c):
-    """Idempotent DB migrations — safe to run every startup."""
-    cols = [r[1] for r in c.execute("PRAGMA table_info(users)").fetchall()]
+    """Idempotent DB migrations — safe on both SQLite and PostgreSQL."""
+    # Check existing columns (different syntax per backend)
+    if _USE_PG:
+        cols = [r['column_name'] for r in c.execute(
+            "SELECT column_name FROM information_schema.columns WHERE table_name='users'"
+        ).fetchall()]
+    else:
+        cols = [r[1] for r in c.execute("PRAGMA table_info(users)").fetchall()]
+
     if "role" not in cols:
         c.execute("ALTER TABLE users ADD COLUMN role TEXT DEFAULT 'staff'")
     if "permissions" not in cols:
         c.execute("ALTER TABLE users ADD COLUMN permissions TEXT DEFAULT '{}'")
+
     # Promote first user to admin
     c.execute("""UPDATE users SET role='admin', permissions=?
                  WHERE id=(SELECT MIN(id) FROM users)
                  AND (role IS NULL OR role='staff' OR role='')""",
               (json.dumps(ADMIN_PERMISSIONS),))
+
     # Default permissions for other users with empty perms
     for row in c.execute(
         "SELECT id, permissions FROM users WHERE id!=(SELECT MIN(id) FROM users)"
     ).fetchall():
-        uid, praw = row
+        uid  = row['id']
+        praw = row['permissions']
         try:
             existing = json.loads(praw) if praw and praw.strip() not in ("", "{}") else {}
         except Exception:
@@ -247,14 +322,25 @@ def _run_migrations(c):
         if not existing:
             c.execute("UPDATE users SET permissions=? WHERE id=?",
                       (json.dumps(DEFAULT_STAFF_PERMISSIONS), uid))
-    c.execute("INSERT OR IGNORE INTO settings VALUES (?,?)", ("revenue_reset_date", ""))
-    # Indexes for faster offline search
-    c.execute("CREATE INDEX IF NOT EXISTS idx_products_name ON products(name)")
+
+    # Upsert defaults (ON CONFLICT syntax works in both SQLite 3.24+ and PostgreSQL)
+    c.execute("INSERT INTO settings (key,value) VALUES (?,?) ON CONFLICT (key) DO NOTHING",
+              ("revenue_reset_date", ""))
+    c.execute("INSERT INTO settings (key,value) VALUES (?,?) ON CONFLICT (key) DO NOTHING",
+              ("pin_attempts", "0"))
+    c.execute("INSERT INTO settings (key,value) VALUES (?,?) ON CONFLICT (key) DO NOTHING",
+              ("lockout_until", ""))
+
+    # Indexes (same syntax in both)
+    c.execute("CREATE INDEX IF NOT EXISTS idx_products_name   ON products(name)")
     c.execute("CREATE INDEX IF NOT EXISTS idx_products_active ON products(active)")
-    c.execute("CREATE INDEX IF NOT EXISTS idx_sales_date ON sales(sale_date)")
-    c.execute("CREATE INDEX IF NOT EXISTS idx_damage_date ON damaged_goods(date_logged)")
-    c.execute("""CREATE TABLE IF NOT EXISTS audit_log (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
+    c.execute("CREATE INDEX IF NOT EXISTS idx_sales_date      ON sales(sale_date)")
+    c.execute("CREATE INDEX IF NOT EXISTS idx_damage_date     ON damaged_goods(date_logged)")
+
+    # Audit log table
+    _pk = "SERIAL PRIMARY KEY" if _USE_PG else "INTEGER PRIMARY KEY AUTOINCREMENT"
+    c.execute(f"""CREATE TABLE IF NOT EXISTS audit_log (
+        id {_pk},
         log_time TEXT,
         user_name TEXT,
         action TEXT,
@@ -265,9 +351,10 @@ def _run_migrations(c):
 def init_db():
     conn = get_db()
     c = conn.cursor()
+    _pk = "SERIAL PRIMARY KEY" if _USE_PG else "INTEGER PRIMARY KEY AUTOINCREMENT"
 
-    c.execute('''CREATE TABLE IF NOT EXISTS products (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
+    c.execute(f'''CREATE TABLE IF NOT EXISTS products (
+        id {_pk},
         name TEXT NOT NULL,
         category TEXT DEFAULT '',
         size TEXT DEFAULT '',
@@ -278,8 +365,8 @@ def init_db():
         active INTEGER DEFAULT 1
     )''')
 
-    c.execute('''CREATE TABLE IF NOT EXISTS sales (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
+    c.execute(f'''CREATE TABLE IF NOT EXISTS sales (
+        id {_pk},
         receipt_no TEXT UNIQUE,
         sale_date TEXT,
         sale_time TEXT,
@@ -291,8 +378,8 @@ def init_db():
         notes TEXT DEFAULT ''
     )''')
 
-    c.execute('''CREATE TABLE IF NOT EXISTS damaged_goods (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
+    c.execute(f'''CREATE TABLE IF NOT EXISTS damaged_goods (
+        id {_pk},
         product_id INTEGER DEFAULT 0,
         product_name TEXT,
         size TEXT DEFAULT '',
@@ -308,28 +395,30 @@ def init_db():
         value TEXT
     )''')
 
-    c.execute('''CREATE TABLE IF NOT EXISTS users (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
+    c.execute(f'''CREATE TABLE IF NOT EXISTS users (
+        id {_pk},
         name TEXT NOT NULL,
         pin TEXT NOT NULL,
         active INTEGER DEFAULT 1,
         role TEXT DEFAULT 'staff',
-        permissions TEXT DEFAULT '{}'
+        permissions TEXT DEFAULT \'{{}}\'
     )''')
 
+    # ON CONFLICT syntax works in both SQLite 3.24+ and PostgreSQL
     defaults = {
-        'shop_name': "De-Nod's Wholesale Drinks",
-        'shop_address': 'Ghana',
-        'shop_phone': '',
-        'shop_email': '',
-        'receipt_footer': 'Thank you for your business! Come again soon.',
-        'currency': 'GHS',
+        'shop_name':          "De-Nod's Wholesale Drinks",
+        'shop_address':       'Ghana',
+        'shop_phone':         '',
+        'shop_email':         '',
+        'receipt_footer':     'Thank you for your business! Come again soon.',
+        'currency':           'GHS',
         'revenue_reset_date': '',
     }
     for k, v in defaults.items():
-        c.execute("INSERT OR IGNORE INTO settings VALUES (?,?)", (k, v))
+        c.execute("INSERT INTO settings (key,value) VALUES (?,?) ON CONFLICT (key) DO NOTHING", (k, v))
 
-    existing_users = c.execute("SELECT COUNT(*) FROM users").fetchone()[0]
+    row = c.execute("SELECT COUNT(*) AS cnt FROM users").fetchone()
+    existing_users = row['cnt'] if isinstance(row, dict) else row[0]
     if existing_users == 0:
         c.execute("INSERT INTO users (name, pin, role, permissions) VALUES (?,?,?,?)",
                   ("Stephen Acquah", "1234", "admin", json.dumps(ADMIN_PERMISSIONS)))
@@ -337,10 +426,10 @@ def init_db():
                   ("Staff", "5678", "staff", json.dumps(DEFAULT_STAFF_PERMISSIONS)))
 
     _run_migrations(c)
-
     conn.commit()
 
-    count = c.execute("SELECT COUNT(*) FROM products").fetchone()[0]
+    row2 = c.execute("SELECT COUNT(*) AS cnt FROM products").fetchone()
+    count = row2['cnt'] if isinstance(row2, dict) else row2[0]
     if count == 0:
         _seed_products(c)
         conn.commit()
@@ -352,12 +441,16 @@ def get_setting(key, default=''):
     conn = get_db()
     row = conn.execute("SELECT value FROM settings WHERE key=?", (key,)).fetchone()
     conn.close()
-    return row[0] if row else default
+    if row is None: return default
+    return row['value'] if isinstance(row, dict) else row[0]
 
 
 def set_setting(key, value):
     conn = get_db()
-    conn.execute("INSERT OR REPLACE INTO settings VALUES (?,?)", (key, value))
+    conn.execute(
+        "INSERT INTO settings (key,value) VALUES (?,?) ON CONFLICT (key) DO UPDATE SET value=EXCLUDED.value",
+        (key, value)
+    )
     conn.commit()
     conn.close()
 
@@ -374,12 +467,12 @@ def check_pin(pin_entered):
     if not row:
         return None
     try:
-        perms = json.loads(row[3]) if row[3] else {}
+        perms = json.loads(row['permissions']) if row['permissions'] else {}
     except Exception:
         perms = {}
-    if row[2] == "admin":
+    if row['role'] == "admin":
         perms = ADMIN_PERMISSIONS.copy()
-    return {"id": row[0], "name": row[1], "role": row[2], "permissions": perms}
+    return {"id": row['id'], "name": row['name'], "role": row['role'], "permissions": perms}
 
 
 def get_all_users():
@@ -391,11 +484,11 @@ def get_all_users():
     result = []
     for r in rows:
         try:
-            perms = json.loads(r[5]) if r[5] else {}
+            perms = json.loads(r['permissions']) if r['permissions'] else {}
         except Exception:
             perms = {}
-        result.append({"id": r[0], "name": r[1], "pin": r[2],
-                        "active": r[3], "role": r[4], "permissions": perms})
+        result.append({"id": r['id'], "name": r['name'], "pin": r['pin'],
+                        "active": r['active'], "role": r['role'], "permissions": perms})
     return result
 
 
@@ -404,6 +497,13 @@ def has_perm(perm_key):
     if st.session_state.get("is_admin", False):
         return True
     return st.session_state.get("permissions", {}).get(perm_key, False)
+
+
+def _row_val(row, idx=0):
+    """Get first column value from a DB row — works for both SQLite and PG."""
+    if row is None: return 0
+    if isinstance(row, dict): return list(row.values())[idx]
+    return row[idx]
 
 
 def audit(action, detail=""):
@@ -427,7 +527,7 @@ def sync_new_products():
     conn = get_db()
     c = conn.cursor()
     existing = set(
-        (r[0].strip().lower(), r[1].strip().lower())
+        (r['name'].strip().lower(), r['size'].strip().lower())
         for r in c.execute("SELECT name, size FROM products").fetchall()
     )
     inserted = 0
@@ -1023,14 +1123,9 @@ if 'active_page' not in st.session_state:
     st.session_state.active_page = "🛒  New Sale"
 if 'active_inv_tab' not in st.session_state:
     st.session_state.active_inv_tab = "📋 View Stock" 
-# ── Brute-force protection ─────────────────────────────────────────────────────
-if 'pin_attempts' not in st.session_state:
-    st.session_state.pin_attempts = 0       # wrong attempts this session
-if 'lockout_until' not in st.session_state:
-    st.session_state.lockout_until = None   # datetime when lockout ends
-
-MAX_ATTEMPTS  = 5
-LOCKOUT_MINS  = 10
+# ── Brute-force protection (DB-backed so it survives app restarts) ────────────
+MAX_ATTEMPTS = 5
+LOCKOUT_MINS = 10
 
 # Check if st.fragment is available (Streamlit >= 1.33)
 _HAS_FRAGMENT = hasattr(st, 'fragment')
@@ -1087,38 +1182,43 @@ if not st.session_state.logged_in:
     with mid:
         st.markdown("<br>", unsafe_allow_html=True)
 
-        # ── Check if currently locked out ─────────────────────────────────────
-        now_dt = datetime.now()
-        locked = (
-            st.session_state.lockout_until is not None
-            and now_dt < st.session_state.lockout_until
-        )
+        # ── DB-backed lockout (survives app restarts / Streamlit Cloud sleep) ────
+        now_dt       = datetime.now()
+        lockout_str  = get_setting("lockout_until", "")
+        pin_attempts = int(get_setting("pin_attempts", "0") or "0")
+
+        # Parse lockout timestamp
+        lockout_until = None
+        if lockout_str:
+            try:
+                lockout_until = datetime.fromisoformat(lockout_str)
+            except Exception:
+                lockout_until = None
+
+        locked = lockout_until is not None and now_dt < lockout_until
 
         if locked:
-            remaining = int((st.session_state.lockout_until - now_dt).total_seconds())
+            remaining = int((lockout_until - now_dt).total_seconds())
             mins, secs = divmod(remaining, 60)
             st.error(
                 f"🔒 Too many wrong attempts.\n\n"
                 f"Please wait **{mins}m {secs:02d}s** before trying again."
             )
             st.caption("The app will unlock automatically. Do not close this page.")
-            # Auto-refresh every second so the countdown updates
-            st.markdown(
-                '<meta http-equiv="refresh" content="1">',
-                unsafe_allow_html=True
-            )
+            st.markdown('<meta http-equiv="refresh" content="5">', unsafe_allow_html=True)
 
         else:
-            # Lockout expired — reset counter
-            if st.session_state.lockout_until is not None:
-                st.session_state.pin_attempts = 0
-                st.session_state.lockout_until = None
+            # Lockout expired — clear it
+            if lockout_str:
+                set_setting("lockout_until", "")
+                set_setting("pin_attempts", "0")
+                pin_attempts = 0
 
-            attempts_left = MAX_ATTEMPTS - st.session_state.pin_attempts
-            if st.session_state.pin_attempts > 0:
+            attempts_left = MAX_ATTEMPTS - pin_attempts
+            if pin_attempts > 0:
                 st.warning(
-                    f"⚠️ {st.session_state.pin_attempts} wrong attempt(s). "
-                    f"{attempts_left} remaining before {LOCKOUT_MINS}-minute lockout."
+                    f"⚠️ {pin_attempts} wrong attempt(s). "
+                    f"{attempts_left} remaining before a {LOCKOUT_MINS}-minute lockout."
                 )
 
             pin_input = st.text_input(
@@ -1134,32 +1234,28 @@ if not st.session_state.logged_in:
                 if pin_input:
                     user = check_pin(sanitize_pin(pin_input))
                     if user:
+                        # ✅ Success — clear lockout state
+                        set_setting("pin_attempts", "0")
+                        set_setting("lockout_until", "")
                         st.session_state.logged_in      = True
                         st.session_state.logged_in_user = user["name"]
                         st.session_state.is_admin       = (user["role"] == "admin")
                         st.session_state.permissions    = user["permissions"]
-                        st.session_state.pin_attempts   = 0
-                        st.session_state.lockout_until  = None
                         st.session_state.last_activity  = datetime.now()
                         audit("LOGIN", f"Role: {user['role']}")
                         st.rerun()
                     else:
-                        # ❌ Wrong PIN — increment counter
-                        st.session_state.pin_attempts += 1
-                        if st.session_state.pin_attempts >= MAX_ATTEMPTS:
-                            st.session_state.lockout_until = (
-                                datetime.now() + timedelta(minutes=LOCKOUT_MINS)
-                            )
-                            st.error(
-                                f"🔒 Too many wrong attempts. "
-                                f"App locked for {LOCKOUT_MINS} minutes."
-                            )
+                        # ❌ Wrong PIN — increment DB counter
+                        new_attempts = pin_attempts + 1
+                        set_setting("pin_attempts", str(new_attempts))
+                        if new_attempts >= MAX_ATTEMPTS:
+                            lockout_ts = (datetime.now() + timedelta(minutes=LOCKOUT_MINS)).isoformat()
+                            set_setting("lockout_until", lockout_ts)
+                            st.error(f"🔒 Too many wrong attempts. App locked for {LOCKOUT_MINS} minutes.")
+                            audit("LOCKOUT", f"After {new_attempts} failed attempts")
                         else:
-                            remaining_tries = MAX_ATTEMPTS - st.session_state.pin_attempts
-                            st.error(
-                                f"❌ Wrong PIN. "
-                                f"{remaining_tries} attempt(s) left before lockout."
-                            )
+                            remaining_tries = MAX_ATTEMPTS - new_attempts
+                            st.error(f"❌ Wrong PIN. {remaining_tries} attempt(s) left before lockout.")
                         st.rerun()
 
     st.stop()   # ← nothing below runs until logged in
@@ -1913,17 +2009,18 @@ if _page == '⚙️  Settings':
     with col_s2:
         st.markdown("**📊 Database Info**")
         conn = get_db()
-        total_products = conn.execute("SELECT COUNT(*) FROM products WHERE active=1").fetchone()[0]
-        total_sales    = conn.execute("SELECT COUNT(*) FROM sales").fetchone()[0]
+        def _n(row): return list(row.values())[0] if isinstance(row, dict) else row[0]
+        total_products = _n(conn.execute("SELECT COUNT(*) FROM products WHERE active=1").fetchone())
+        total_sales    = _n(conn.execute("SELECT COUNT(*) FROM sales").fetchone())
         reset_date     = get_setting("revenue_reset_date", "")
         if reset_date:
-            total_rev = conn.execute(
+            total_rev = _n(conn.execute(
                 "SELECT COALESCE(SUM(subtotal),0) FROM sales WHERE sale_date >= ?",
                 (reset_date,)
-            ).fetchone()[0]
+            ).fetchone())
         else:
-            total_rev = conn.execute("SELECT COALESCE(SUM(subtotal),0) FROM sales").fetchone()[0]
-        total_damage = conn.execute("SELECT COALESCE(SUM(total_loss),0) FROM damaged_goods").fetchone()[0]
+            total_rev = _n(conn.execute("SELECT COALESCE(SUM(subtotal),0) FROM sales").fetchone())
+        total_damage = _n(conn.execute("SELECT COALESCE(SUM(total_loss),0) FROM damaged_goods").fetchone())
         conn.close()
 
         st.metric("Products in Catalogue", total_products)
@@ -1985,6 +2082,7 @@ if _page == '⚙️  Settings':
                 "SELECT log_time, user_name, action, detail FROM audit_log ORDER BY id DESC LIMIT ?",
                 (log_limit,)
             ).fetchall()
+            log_rows = [dict(r) if isinstance(r, dict) else dict(zip(['Time','User','Action','Detail'], r)) for r in log_rows]
             conn.close()
             if log_rows:
                 log_df = pd.DataFrame(log_rows, columns=["Time", "User", "Action", "Detail"])
